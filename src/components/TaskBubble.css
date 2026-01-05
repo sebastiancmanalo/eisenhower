@@ -1,1 +1,135 @@
+.task-bubble {
+  position: relative;
+  background-color: #FFFFFF;
+  border: none;
+  border-radius: 20px;
+  padding: 32px 28px 32px 40px;
+  min-height: 120px;
+  margin-bottom: 16px;
+  --glow-rgb: 0, 0, 0;
+  box-shadow: 
+    /* Neutral depth shadow */
+    0px 4px 20px rgba(0, 0, 0, 0.08),
+    0px 8px 40px rgba(0, 0, 0, 0.06),
+    /* Ambient colored glow */
+    0px 0px 80px rgba(var(--glow-rgb), 0.05),
+    /* Subtle inner highlight at top */
+    inset 0px 1px 0px rgba(255, 255, 255, 0.8);
+  
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  
+  transition: all 140ms linear;
+  cursor: grab;
+}
 
+.task-bubble__content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  text-align: center;
+}
+
+.task-bubble__priority-dot {
+  position: absolute;
+  left: 20px;
+  top: 20px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.task-bubble__priority-dot.priority-high {
+  background-color: #FF3B30;
+}
+
+.task-bubble__priority-dot.priority-medium {
+  background-color: #FF9F0A;
+}
+
+.task-bubble__priority-dot.priority-low {
+  background-color: #007AFF;
+}
+
+.task-bubble__title {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', system-ui, sans-serif;
+  font-size: 36px;
+  font-weight: 600;
+  color: #000000;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+  
+  /* Handle long titles: clamp to 2 lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.task-bubble__duration {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro', 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: rgba(142, 142, 147, 0.75);
+  letter-spacing: 0.02em;
+  text-align: center;
+  margin: 0;
+  padding: 0;
+}
+
+.task-bubble:hover {
+  box-shadow: 
+    /* Enhanced neutral depth shadow */
+    0px 6px 24px rgba(0, 0, 0, 0.12),
+    0px 12px 48px rgba(0, 0, 0, 0.08),
+    /* Stronger ambient colored glow */
+    0px 0px 100px rgba(var(--glow-rgb), 0.08),
+    /* Stronger border via inset shadow */
+    inset 0px 0px 0px 2px rgba(var(--glow-rgb), 0.15),
+    /* Maintain inner highlight */
+    inset 0px 1px 0px rgba(255, 255, 255, 0.8);
+  transition: all 140ms linear;
+}
+
+.task-bubble:active {
+  transform: translateY(1px);
+  box-shadow: 
+    0px 2px 12px rgba(0, 0, 0, 0.1),
+    0px 4px 24px rgba(0, 0, 0, 0.06),
+    0px 0px 60px rgba(var(--glow-rgb), 0.04),
+    inset 0px 1px 0px rgba(255, 255, 255, 0.8);
+  transition: all 120ms linear;
+}
+
+.task-bubble--dragging {
+  opacity: 0.6;
+  cursor: grabbing;
+  transition: all 140ms linear;
+}
+
+.task-bubble--ghost-hidden {
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-bubble,
+  .task-bubble:hover,
+  .task-bubble:active,
+  .task-bubble--dragging {
+    transition-duration: 0.01ms !important;
+    transform: none !important;
+  }
+}

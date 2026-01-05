@@ -1,0 +1,30 @@
+.app {
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (min-width: 1025px) {
+  .app {
+    padding: 32px;
+  }
+
+  .app-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: auto 1fr;
+    gap: 16px;
+  }
+
+  .app-container > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+

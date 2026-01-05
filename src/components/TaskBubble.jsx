@@ -1,5 +1,4 @@
 import React from 'react';
-import { formatEstimateMinutes } from '../utils/timeFormat';
 import './TaskBubble.css';
 
 const getPriorityFromUrgency = (urgency) => {
@@ -21,7 +20,6 @@ const getPriorityText = (priority) => {
 };
 
 function TaskBubble({ 
-  task,
   taskName, 
   urgencyColor, 
   urgency,
@@ -62,12 +60,6 @@ function TaskBubble({
     } : {})
   };
 
-  // Get task name from task prop or taskName prop
-  const displayName = task?.title || task?.name || taskName || 'Untitled Task';
-  
-  // Format time badge from task.estimateMinutesTotal or use provided timeBadge
-  const displayTimeBadge = timeBadge || (task?.estimateMinutesTotal ? formatEstimateMinutes(task.estimateMinutesTotal) : null);
-
   return (
     <div 
       className={bubbleClassName}
@@ -81,9 +73,9 @@ function TaskBubble({
         />
       )}
       <div className="task-bubble__content">
-        <h3 className="task-bubble__title">{displayName}</h3>
-        {displayTimeBadge && (
-          <span className="task-bubble__duration">{displayTimeBadge}</span>
+        <h3 className="task-bubble__title">{taskName}</h3>
+        {timeBadge && (
+          <span className="task-bubble__duration">{timeBadge}</span>
         )}
       </div>
     </div>

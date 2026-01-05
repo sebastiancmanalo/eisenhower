@@ -1,401 +1,424 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { DndContext, DragOverlay, closestCenter } from '@dnd-kit/core';
-import { getQuadrant } from './utils/taskLogic';
-import { formatEstimateMinutes } from './utils/timeFormat';
-import Quadrant from './components/Quadrant';
-import FloatingActionButton from './components/FloatingActionButton';
-import TaskCreationOverlay from './components/TaskCreationOverlay';
-import AssignmentCountdownOverlay from './components/AssignmentCountdownOverlay';
-import DroppableQuadrant from './components/DroppableQuadrant';
-import DraggableTask from './components/DraggableTask';
-import TaskBubble from './components/TaskBubble';
-import Toast from './components/Toast';
-import './App.css';
-import './styles/global.css';
+import React, { useState, useEffect, useRef } from 'react';
+import { DndContext, DragOverlay } from '@dnd-kit/core';
+import Quadrant from './components/Quadrant.jsx';
+import DroppableQuadrant from './components/DroppableQuadrant.jsx';
+import TaskBubble from './components/TaskBubble.jsx';
+import FloatingActionButton from './components/FloatingActionButton.jsx';
+import TaskCreationOverlay from './components/TaskCreationOverlay.jsx';
+import AssignmentCountdownOverlay from './components/AssignmentCountdownOverlay.jsx';
+import ToastHost from './components/ToastHost.jsx';
+import { getQuadrant } from './utils/taskLogic.js';
 import './styles/tokens.css';
+import './styles/global.css';
+import './App.css';
 
-const QUADRANT_CONFIG = [
-  {
-    id: 'Q1',
-    title: 'Do First',
-    subtitle: 'Urgent & Important',
-    backgroundColor: 'var(--color-bg-q1)',
-    boxShadow: '0px 2px 12px rgba(255, 59, 48, 0.15)',
-  },
-  {
-    id: 'Q2',
-    title: 'Schedule',
-    subtitle: 'Important, Not Urgent',
-    backgroundColor: 'var(--color-bg-q2)',
-    boxShadow: '0px 2px 12px rgba(0, 122, 255, 0.15)',
-  },
-  {
-    id: 'Q3',
-    title: 'Delegate',
-    subtitle: 'Urgent, Not Important',
-    backgroundColor: 'var(--color-bg-q3)',
-    boxShadow: '0px 2px 12px rgba(255, 149, 0, 0.15)',
-  },
-  {
-    id: 'Q4',
-    title: 'Delete',
-    subtitle: 'Not Important, Not Urgent',
-    backgroundColor: 'var(--color-bg-q4)',
-    boxShadow: '0px 2px 12px rgba(88, 86, 214, 0.15)',
-  },
-];
+function App({ initialTasks }) {
+  const defaultTasks = [
+    { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m" },
+    { id: 2, title: "Email stakeholder", urgent: false, important: true }
+  ];
+  const [tasks, setTasks] = useState(initialTasks ?? defaultTasks);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [pendingAssignmentTaskId, setPendingAssignmentTaskId] = useState(null);
+  const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
+  const [assignmentSecondsLeft, setAssignmentSecondsLeft] = useState(10);
+  const [toasts, setToasts] = useState([]);
+  const [activeDragTaskId, setActiveDragTaskId] = useState(null);
+  const toastTimeoutsRef = useRef(new Map());
 
-const DEFAULT_TASKS = [
-  { id: '1', title: 'Review project proposal', urgent: true, important: true },
-  { id: '2', title: 'Plan team meeting', urgent: false, important: true },
-];
-
-function App({ initialTasks, __test_onDragEnd }) {
-  const [tasks, setTasks] = useState(() => {
-    if (initialTasks && Array.isArray(initialTasks)) {
-      return initialTasks;
+  const pushToast = ({ message, tone = "neutral", durationMs = 3000, key = null, meta = {} }) => {
+    if (key === "move") {
+      // Find existing move toast
+      setToasts(prev => {
+        const existing = prev.find(t => t.key === "move");
+        
+        if (existing) {
+          // Build a NEW Set from existing.movedTaskIds
+          const nextSet = new Set(existing.movedTaskIds ?? []);
+          
+          // If meta.taskId exists, add it
+          if (meta?.taskId) {
+            nextSet.add(String(meta.taskId));
+          }
+          
+          // Compute count from Set size
+          const nextCount = nextSet.size;
+          
+          // Get next destination
+          const nextDest = meta?.lastDest ?? existing.lastDest;
+          
+          // Build message
+          const nextMessage = `Moved ${nextCount} task${nextCount === 1 ? "" : "s"} → ${nextDest}`;
+          
+          // Increment version
+          const nextVersion = (existing.version ?? 0) + 1;
+          
+          // Refresh timer
+          const existingTimeout = toastTimeoutsRef.current.get(existing.id);
+          if (existingTimeout) {
+            clearTimeout(existingTimeout);
+            toastTimeoutsRef.current.delete(existing.id);
+          }
+          
+          const timerId = setTimeout(() => {
+            dismissToast(existing.id);
+          }, durationMs);
+          toastTimeoutsRef.current.set(existing.id, timerId);
+          
+          // Update toast immutably
+          return prev.map(t =>
+            t.id === existing.id
+              ? { ...t, movedTaskIds: Array.from(nextSet), lastDest: nextDest, message: nextMessage, version: nextVersion, durationMs }
+              : t
+          );
+        } else {
+          // Create new move toast
+          const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+          const taskId = meta?.taskId ? String(meta.taskId) : null;
+          const movedTaskIds = taskId ? [taskId] : [];
+          const nextCount = movedTaskIds.length || 1;
+          const lastDest = meta?.lastDest;
+          const version = 0;
+          
+          const nextMessage = lastDest
+            ? `Moved ${nextCount} task${nextCount === 1 ? "" : "s"} → ${lastDest}`
+            : message || `Moved ${nextCount} task`;
+          
+          const newToast = { 
+            id, 
+            key: "move",
+            tone, 
+            durationMs, 
+            movedTaskIds, 
+            lastDest, 
+            version, 
+            message: nextMessage 
+          };
+          
+          const timerId = setTimeout(() => {
+            dismissToast(id);
+          }, durationMs);
+          toastTimeoutsRef.current.set(id, timerId);
+          
+          return [...prev, newToast];
+        }
+      });
+      return null;
+    } else if (key) {
+      // Other keyed toasts (if any) - keep existing behavior
+      const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      const newToast = { id, message, tone, durationMs, key };
+      
+      setToasts(prev => [...prev, newToast]);
+      
+      const timerId = setTimeout(() => {
+        dismissToast(id);
+      }, durationMs);
+      
+      toastTimeoutsRef.current.set(id, timerId);
+      
+      return id;
+    } else {
+      // Non-keyed toast (existing behavior)
+      const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      const newToast = { id, message, tone, durationMs };
+      
+      setToasts(prev => [...prev, newToast]);
+      
+      const timerId = setTimeout(() => {
+        dismissToast(id);
+      }, durationMs);
+      
+      toastTimeoutsRef.current.set(id, timerId);
+      
+      return id;
     }
-    return DEFAULT_TASKS;
-  });
-
-
-  const [isTaskCreationOpen, setIsTaskCreationOpen] = useState(false);
-  const [assignmentTask, setAssignmentTask] = useState(null);
-  const [assignmentCountdown, setAssignmentCountdown] = useState(10);
-  const [activeDragId, setActiveDragId] = useState(null);
-  const [toast, setToast] = useState(null);
-  const [undoState, setUndoState] = useState(null);
-
-  const quadrantTasks = useMemo(() => {
-    const result = {
-      Q1: [],
-      Q2: [],
-      Q3: [],
-      Q4: [],
-    };
-
-    tasks.forEach((task) => {
-      const quadrant = getQuadrant(task);
-      result[quadrant].push(task);
-    });
-
-    return result;
-  }, [tasks]);
-
-  const getQuadrantFromId = (quadrantId) => {
-    const mapping = {
-      Q1: { urgent: true, important: true },
-      Q2: { urgent: false, important: true },
-      Q3: { urgent: true, important: false },
-      Q4: { urgent: false, important: false },
-    };
-    return mapping[quadrantId];
   };
 
-  const updateTaskQuadrant = (taskId, quadrantId) => {
-    const quadrantFlags = getQuadrantFromId(quadrantId);
-    setTasks((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === taskId
-          ? { ...task, urgent: quadrantFlags.urgent, important: quadrantFlags.important }
-          : task
-      )
-    );
-    return quadrantFlags;
+  const dismissToast = (id) => {
+    const timeout = toastTimeoutsRef.current.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      toastTimeoutsRef.current.delete(id);
+    }
+    
+    setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  const handleCreateTask = (taskData) => {
-    const hours = taskData.estimateHours ? parseInt(taskData.estimateHours, 10) : 0;
-    const minutes = taskData.estimateMinutes ? parseInt(taskData.estimateMinutes, 10) : 0;
+  useEffect(() => {
+    if (!isAssignmentOpen) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      setAssignmentSecondsLeft((prev) => {
+        if (prev <= 1) {
+          const pendingTask = tasks.find(task => task.id === pendingAssignmentTaskId);
+          if (pendingTask) {
+            const quadrant = getQuadrant(pendingTask);
+            setIsAssignmentOpen(false);
+            setPendingAssignmentTaskId(null);
+            pushToast({ message: `Auto-placed in ${quadrant}`, tone: "neutral" });
+          }
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [isAssignmentOpen, pendingAssignmentTaskId, tasks]);
+
+  useEffect(() => {
+    return () => {
+      toastTimeoutsRef.current.forEach(timerId => {
+        clearTimeout(timerId);
+      });
+      toastTimeoutsRef.current.clear();
+    };
+  }, []);
+
+  const handleTaskClick = (task) => {
+    console.log('Task clicked:', task);
+  };
+
+  const handleCreateTask = (newTaskData) => {
+    // Convert hours and minutes to total minutes
+    const hours = newTaskData.estimateHours ? parseInt(newTaskData.estimateHours, 10) : 0;
+    const minutes = newTaskData.estimateMinutes ? parseInt(newTaskData.estimateMinutes, 10) : 0;
     const totalMinutes = hours * 60 + minutes;
-
+    
     const newTask = {
-      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      title: taskData.title,
-      urgent: taskData.urgent || false,
-      important: taskData.important || false,
-      ...(taskData.priority && { priority: taskData.priority }),
-      ...(totalMinutes > 0 && { estimateMinutesTotal: totalMinutes }),
+      ...newTaskData,
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now(),
+      estimateMinutesTotal: totalMinutes > 0 ? totalMinutes : null
     };
-
-    setTasks((prevTasks) => [...prevTasks, newTask]);
-    setIsTaskCreationOpen(false);
-    setAssignmentTask(newTask);
-    setAssignmentCountdown(10);
+    
+    // Remove estimateHours and estimateMinutes from task (they're not part of the canonical format)
+    delete newTask.estimateHours;
+    delete newTask.estimateMinutes;
+    
+    setTasks(prevTasks => [...prevTasks, newTask]);
+    setPendingAssignmentTaskId(newTask.id);
+    setIsAssignmentOpen(true);
+    setAssignmentSecondsLeft(10);
+    setIsCreateOpen(false);
+    pushToast({ message: "Task created", tone: "success" });
   };
 
-  const handleAssignQuadrant = (quadrantId) => {
-    if (!assignmentTask) return;
-
-    const previousFlags = {
-      urgent: assignmentTask.urgent,
-      important: assignmentTask.important,
+  const handleAssignPendingTaskToQuadrant = (quadrantId) => {
+    const quadrantFlags = {
+      'Q1': { urgent: true, important: true },
+      'Q2': { urgent: false, important: true },
+      'Q3': { urgent: true, important: false },
+      'Q4': { urgent: false, important: false }
     };
 
-    const quadrantFlags = getQuadrantFromId(quadrantId);
-    setTasks((prevTasks) =>
-      prevTasks.map((task) =>
-        task.id === assignmentTask.id
-          ? { ...task, urgent: quadrantFlags.urgent, important: quadrantFlags.important }
+    const flags = quadrantFlags[quadrantId];
+    if (!flags) {
+      return;
+    }
+
+    setTasks(prevTasks => 
+      prevTasks.map(task => 
+        task.id === pendingAssignmentTaskId
+          ? { ...task, urgent: flags.urgent, important: flags.important }
           : task
       )
     );
-
-    setUndoState({
-      taskId: assignmentTask.id,
-      previousFlags,
-    });
-
-    const undoHandler = () => {
-      setTasks((prevTasks) =>
-        prevTasks.map((task) =>
-          task.id === assignmentTask.id
-            ? {
-                ...task,
-                urgent: previousFlags.urgent,
-                important: previousFlags.important,
-              }
-            : task
-        )
-      );
-      setToast(null);
-      setUndoState(null);
-    };
-
-    setToast({
-      message: `Placed in ${quadrantId}`,
-      onUndo: undoHandler,
-    });
-
-    setAssignmentTask(null);
-    setAssignmentCountdown(10);
+    setIsAssignmentOpen(false);
+    setPendingAssignmentTaskId(null);
   };
-
 
   const handleDragStart = (event) => {
-    setActiveDragId(event.active.id);
+    setActiveDragTaskId(event.active.id);
+  };
+
+  const handleDragCancel = () => {
+    setActiveDragTaskId(null);
   };
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
 
-    if (over && ['Q1', 'Q2', 'Q3', 'Q4'].includes(over.id)) {
-      const taskId = active.id;
-      const task = tasks.find((t) => t.id === taskId);
-
-      if (task) {
-        const previousFlags = {
-          urgent: task.urgent,
-          important: task.important,
-        };
-
-        updateTaskQuadrant(taskId, over.id);
-
-        setUndoState({
-          taskId,
-          previousFlags,
-        });
-
-        const undoHandler = () => {
-          setTasks((prevTasks) =>
-            prevTasks.map((t) =>
-              t.id === taskId
-                ? {
-                    ...t,
-                    urgent: previousFlags.urgent,
-                    important: previousFlags.important,
-                  }
-                : t
-            )
-          );
-          setToast(null);
-          setUndoState(null);
-        };
-
-        setToast({
-          message: `Moved to ${over.id}`,
-          onUndo: undoHandler,
-        });
-      }
-    }
-
-    setActiveDragId(null);
-  };
-
-  // Expose handler to test seam if provided
-  useEffect(() => {
-    if (__test_onDragEnd && typeof __test_onDragEnd === 'object' && __test_onDragEnd.setHandler) {
-      __test_onDragEnd.setHandler(handleDragEnd);
-    }
-  }, [__test_onDragEnd, handleDragEnd]);
-
-  useEffect(() => {
-    if (!assignmentTask) return;
-
-    if (assignmentCountdown <= 0) {
-      const quadrant = getQuadrant(assignmentTask);
-      const previousFlags = {
-        urgent: assignmentTask.urgent,
-        important: assignmentTask.important,
-      };
-
-      setUndoState({
-        taskId: assignmentTask.id,
-        previousFlags,
-      });
-
-      const undoHandler = () => {
-        setTasks((prevTasks) =>
-          prevTasks.map((task) =>
-            task.id === assignmentTask.id
-              ? {
-                  ...task,
-                  urgent: previousFlags.urgent,
-                  important: previousFlags.important,
-                }
-              : task
-          )
-        );
-        setToast(null);
-        setUndoState(null);
-      };
-
-      setToast({
-        message: `Auto-placed in ${quadrant}`,
-        onUndo: undoHandler,
-      });
-
-      setAssignmentTask(null);
-      setAssignmentCountdown(10);
+    if (!over || !over.id) {
+      setActiveDragTaskId(null);
       return;
     }
 
-    const timer = setInterval(() => {
-      setAssignmentCountdown((prev) => prev - 1);
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [assignmentTask, assignmentCountdown]);
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => {
-        setToast(null);
-        setUndoState(null);
-      }, 5000);
-
-      return () => clearTimeout(timer);
+    const quadrantId = over.id;
+    if (!['Q1', 'Q2', 'Q3', 'Q4'].includes(quadrantId)) {
+      setActiveDragTaskId(null);
+      return;
     }
-  }, [toast]);
 
-  const getTaskUrgencyColor = (task) => {
-    const quadrant = getQuadrant(task);
-    const colorMap = {
-      Q1: '#FF3B30',
-      Q2: '#007AFF',
-      Q3: '#FF9500',
-      Q4: '#5856D6',
+    const quadrantFlags = {
+      'Q1': { urgent: true, important: true },
+      'Q2': { urgent: false, important: true },
+      'Q3': { urgent: true, important: false },
+      'Q4': { urgent: false, important: false }
     };
-    return colorMap[quadrant];
-  };
 
-  const getTaskTimeBadge = (task) => {
-    return formatEstimateMinutes(task.estimateMinutesTotal);
-  };
+    const flags = quadrantFlags[quadrantId];
+    const draggedTaskId = active.id;
 
-  const activeTask = activeDragId ? tasks.find((t) => t.id === activeDragId) : null;
+    const draggedTask = tasks.find(task => String(task.id) === String(draggedTaskId));
+    if (!draggedTask) {
+      setActiveDragTaskId(null);
+      return;
+    }
 
-  const renderTask = (task, index) => {
-    return (
-      <DraggableTask key={task.id} id={task.id} isGhostHidden={false}>
-        <TaskBubble
-          taskName={task.title}
-          urgencyColor={getTaskUrgencyColor(task)}
-          timeBadge={getTaskTimeBadge(task)}
-          onClick={() => {
-            console.log('Task clicked:', task);
-          }}
-        />
-      </DraggableTask>
+    const currentQuadrant = getQuadrant(draggedTask);
+    const isNoOp = currentQuadrant === quadrantId;
+
+    setTasks(prevTasks => 
+      prevTasks.map(task => {
+        const taskIdString = String(task.id);
+        const draggedIdString = String(draggedTaskId);
+        return taskIdString === draggedIdString
+          ? { ...task, urgent: flags.urgent, important: flags.important }
+          : task;
+      })
     );
+    setActiveDragTaskId(null);
+
+    if (!isNoOp) {
+      pushToast({ 
+        key: "move",
+        tone: "success",
+        durationMs: 1800,
+        meta: { taskId: String(active.id), lastDest: String(over.id) }
+      });
+    }
   };
+
+  const pendingTask = pendingAssignmentTaskId
+    ? tasks.find(task => task.id === pendingAssignmentTaskId) || null
+    : null;
+
+  const activeTask = activeDragTaskId
+    ? tasks.find(task => String(task.id) === String(activeDragTaskId)) || null
+    : null;
+
+  const urgencyColors = {
+    red: '#FF3B30',
+    yellow: '#FF9F0A',
+    green: '#34C759'
+  };
+
+  const getUrgencyFromTask = (task) => {
+    if (task.urgent && task.important) return 'red';
+    if (task.important && !task.urgent) return 'yellow';
+    if (task.urgent && !task.important) return 'yellow';
+    return 'green';
+  };
+
+  const formatTime = (estimateMinutesTotal) => {
+    if (!estimateMinutesTotal || estimateMinutesTotal <= 0) return undefined;
+    if (estimateMinutesTotal >= 60) {
+      const hours = Math.floor(estimateMinutesTotal / 60);
+      const minutes = estimateMinutesTotal % 60;
+      return minutes > 0 ? `${hours}h ${minutes.toString().padStart(2, '0')}m` : `${hours}h`;
+    }
+    return `${estimateMinutesTotal}m`;
+  };
+
+  const q1Tasks = tasks.filter(task => getQuadrant(task) === 'Q1');
+  const q2Tasks = tasks.filter(task => getQuadrant(task) === 'Q2');
+  const q3Tasks = tasks.filter(task => getQuadrant(task) === 'Q3');
+  const q4Tasks = tasks.filter(task => getQuadrant(task) === 'Q4');
 
   return (
     <div className="app">
-      <DndContext
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={(event) => {
-          if (__test_onDragEnd) {
-            __test_onDragEnd(event);
-          }
-          handleDragEnd(event);
-        }}
-      >
+      <DndContext onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
         <div className="app-container">
-          {QUADRANT_CONFIG.map((config) => (
-            <DroppableQuadrant key={config.id} id={config.id}>
-              <Quadrant
-                title={config.title}
-                subtitle={config.subtitle}
-                backgroundColor={config.backgroundColor}
-                boxShadow={config.boxShadow}
-                tasks={quadrantTasks[config.id]}
-                renderTask={renderTask}
-                testId={`quadrant-${config.id}`}
-                onTaskClick={(task) => {
-                  console.log('Task clicked:', task);
-                }}
-              />
-            </DroppableQuadrant>
-          ))}
+          <DroppableQuadrant id="Q1">
+            <Quadrant
+              title="Do First"
+              subtitle="Urgent & Important"
+              backgroundColor="var(--color-bg-q1)"
+              tasks={q1Tasks}
+              onTaskClick={handleTaskClick}
+              activeDragTaskId={activeDragTaskId}
+              emptyTitle="Nothing critical"
+              emptySubtext="No urgent, important tasks right now."
+              emptyHint="Keep it that way."
+            />
+          </DroppableQuadrant>
+          
+          <DroppableQuadrant id="Q2">
+            <Quadrant
+              title="Schedule"
+              subtitle="Important, Not Urgent"
+              backgroundColor="var(--color-bg-q2)"
+              tasks={q2Tasks}
+              onTaskClick={handleTaskClick}
+              activeDragTaskId={activeDragTaskId}
+              emptyTitle="No strategic work queued"
+              emptySubtext="Nothing important waiting without urgency."
+              emptyHint="Add something you want to invest in."
+            />
+          </DroppableQuadrant>
+          
+          <DroppableQuadrant id="Q3">
+            <Quadrant
+              title="Delegate"
+              subtitle="Urgent, Not Important"
+              backgroundColor="var(--color-bg-q3)"
+              tasks={q3Tasks}
+              onTaskClick={handleTaskClick}
+              activeDragTaskId={activeDragTaskId}
+              emptyTitle="No interruptions"
+              emptySubtext="Nothing urgent pulling you off track."
+            />
+          </DroppableQuadrant>
+          
+          <DroppableQuadrant id="Q4">
+            <Quadrant
+              title="Delete"
+              subtitle="Not Important, Not Urgent"
+              backgroundColor="var(--color-bg-q4)"
+              tasks={q4Tasks}
+              onTaskClick={handleTaskClick}
+              activeDragTaskId={activeDragTaskId}
+              emptyTitle="Clear"
+              emptySubtext="No low-value tasks here."
+            />
+          </DroppableQuadrant>
         </div>
-
         <DragOverlay>
           {activeTask ? (
             <div className="drag-overlay-card">
               <TaskBubble
-                taskName={activeTask.title}
-                urgencyColor={getTaskUrgencyColor(activeTask)}
-                timeBadge={getTaskTimeBadge(activeTask)}
-                isDragging={true}
+                taskName={activeTask.title || 'Untitled Task'}
+                urgency={getUrgencyFromTask(activeTask)}
+                urgencyColor={urgencyColors[getUrgencyFromTask(activeTask)]}
+                timeBadge={formatTime(activeTask.estimateMinutesTotal)}
               />
             </div>
           ) : null}
         </DragOverlay>
       </DndContext>
-
-      <FloatingActionButton onClick={() => setIsTaskCreationOpen(true)} />
-
+      <FloatingActionButton onClick={() => setIsCreateOpen(true)} />
       <TaskCreationOverlay
-        isOpen={isTaskCreationOpen}
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
         onSubmit={handleCreateTask}
-        onClose={() => setIsTaskCreationOpen(false)}
       />
-
       <AssignmentCountdownOverlay
-        isOpen={!!assignmentTask}
-        task={assignmentTask}
-        secondsLeft={assignmentCountdown}
-        onAssignQuadrant={handleAssignQuadrant}
+        isOpen={isAssignmentOpen}
+        task={pendingTask}
+        secondsLeft={assignmentSecondsLeft}
+        onAssignQuadrant={handleAssignPendingTaskToQuadrant}
         onClose={() => {
-          setAssignmentTask(null);
-          setAssignmentCountdown(10);
+          setIsAssignmentOpen(false);
+          setPendingAssignmentTaskId(null);
         }}
       />
-
-      {toast && (
-        <Toast
-          message={toast.message}
-          onUndo={toast.onUndo}
-          onDismiss={() => {
-            setToast(null);
-            setUndoState(null);
-          }}
-        />
-      )}
+      <ToastHost toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
 
 export default App;
+

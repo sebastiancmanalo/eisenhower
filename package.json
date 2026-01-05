@@ -6,7 +6,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest"
+    "test": "vitest",
+    "snapshot": "bash scripts/snapshot.sh",
+    "preflight": "bash scripts/preflight.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
