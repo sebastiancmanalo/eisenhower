@@ -1,0 +1,148 @@
+.toast-host {
+  position: fixed;
+  top: var(--space-xl);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: center;
+  pointer-events: none;
+  width: 100%;
+  max-width: 400px;
+  padding: 0 var(--space-md);
+}
+
+.toast {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--color-bg-app);
+  border: 2px solid transparent;
+  border-radius: 16px;
+  padding: var(--space-md) var(--space-lg);
+  width: 100%;
+  min-height: 48px;
+  pointer-events: auto;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  letter-spacing: var(--letter-spacing-normal);
+  line-height: var(--line-height-sm);
+  isolation: isolate;
+}
+
+.toastContent {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.toast--success {
+  border-color: #34C759;
+  --toast-border-color: rgba(63,185,80,1);
+}
+
+.toast--warning {
+  border-color: #FF9500;
+  --toast-border-color: rgba(255,170,0,0.9);
+}
+
+.toast--neutral {
+  border-color: var(--color-text-primary);
+  --toast-border-color: rgba(255,255,255,0.35);
+}
+
+.toast__message {
+  flex: 1;
+  text-align: left;
+}
+
+.toast__dismiss {
+  background: none;
+  border: none;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-normal);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+.toast__dismiss:hover {
+  opacity: 0.7;
+}
+
+.toast__dismiss:active {
+  opacity: 0.5;
+}
+
+/* Staggered vertical spacing using CSS custom property */
+.toast {
+  margin-top: calc(var(--toast-index) * var(--space-sm));
+}
+
+/* Border fade animation for time remaining */
+.toast::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--toast-border-color, rgba(255,255,255,0.35));
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 1;
+  animation-name: toast-border-fade;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  animation-duration: var(--toast-duration);
+}
+
+@keyframes toast-border-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Subtle fade/slide-in animation - only if reduced-motion is not preferred */
+@media (prefers-reduced-motion: no-preference) {
+  .toast {
+    animation: toast-enter 200ms var(--ease-out);
+  }
+}
+
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* No animation if reduced-motion is preferred */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+  .toast::before {
+    animation: none;
+    opacity: 1;
+  }
+}
+

@@ -1,0 +1,132 @@
+.assignment-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.assignment-overlay__backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+}
+
+.assignment-overlay__content {
+  position: relative;
+  background-color: var(--color-bg-app);
+  border: 2px solid var(--color-overlay-border);
+  border-radius: var(--radius-xl);
+  width: 90%;
+  max-width: 800px;
+  padding: var(--space-xxl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xl);
+  box-shadow: 0px 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.assignment-overlay__title {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+  letter-spacing: var(--letter-spacing-tight);
+  text-align: center;
+}
+
+.assignment-overlay__task-title {
+  font-family: var(--font-family);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  text-align: center;
+  padding: var(--space-lg);
+  background-color: var(--color-overlay-base);
+  border: 1px solid var(--color-overlay-border);
+  border-radius: var(--radius-md);
+}
+
+.assignment-overlay__countdown {
+  font-family: var(--font-family);
+  font-size: 64px;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  text-align: center;
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.assignment-overlay__drag-area {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  background-color: var(--color-overlay-base);
+  border: 1px solid var(--color-overlay-border);
+  border-radius: var(--radius-md);
+}
+
+.assignment-overlay__task-card {
+  background-color: var(--color-bg-task);
+  border: 2px solid var(--color-overlay-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg) var(--space-xl);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  cursor: grab;
+  user-select: none;
+  box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.3);
+  transition: all var(--duration-base) var(--ease-out);
+}
+
+.assignment-overlay__task-card:active {
+  cursor: grabbing;
+}
+
+.assignment-overlay__task-card--dragging {
+  opacity: 0.6;
+  transform: rotate(2deg);
+}
+
+.assignment-overlay__zones {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-lg);
+}
+
+.assignment-overlay__zone {
+  background-color: var(--color-overlay-base);
+  border: 2px solid var(--color-overlay-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  font-family: var(--font-family);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  text-align: center;
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--duration-base) var(--ease-out);
+}
+
+.assignment-overlay__zone--over {
+  background-color: var(--color-overlay-hover);
+  border-color: var(--color-overlay-border-hover);
+  transform: scale(1.05);
+}
+
+

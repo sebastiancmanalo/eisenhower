@@ -1,0 +1,10 @@
+.dropzone {
+  position: relative;
+  border-radius: inherit; /* so it matches the quadrant card rounding */
+}
+
+.dropzone:focus,
+.dropzone:focus-visible {
+  outline: none;
+}
+

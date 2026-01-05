@@ -1,0 +1,29 @@
+.floating-action-button {
+  position: fixed;
+  bottom: var(--space-xl);
+  right: var(--space-xl);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--color-text-primary);
+  color: var(--color-bg-app);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  box-shadow: 0px 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.floating-action-button__icon {
+  font-family: var(--font-family);
+  font-size: 36px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+

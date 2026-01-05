@@ -1,0 +1,170 @@
+.task-creation-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.task-creation-overlay__backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+.task-creation-overlay__modal {
+  position: relative;
+  background-color: var(--color-bg-app);
+  border: 1px solid var(--color-overlay-border);
+  border-radius: var(--radius-xl);
+  width: 90%;
+  max-width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.task-creation-overlay__form {
+  padding: var(--space-xxl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.task-creation-overlay__title {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-md) 0;
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+.task-creation-overlay__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.task-creation-overlay__label {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-secondary);
+  letter-spacing: var(--letter-spacing-slight);
+}
+
+.task-creation-overlay__required {
+  color: var(--color-bg-q1);
+}
+
+.task-creation-overlay__input {
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  background-color: var(--color-overlay-base);
+  border: 1px solid var(--color-overlay-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm) var(--space-md);
+  transition: all var(--duration-base) var(--ease-out);
+}
+
+.task-creation-overlay__input:focus {
+  outline: none;
+  border-color: var(--color-overlay-border-hover);
+  background-color: var(--color-overlay-hover);
+}
+
+.task-creation-overlay__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.task-creation-overlay__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.task-creation-overlay__checkbox {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: var(--color-bg-q2);
+}
+
+.task-creation-overlay__actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+  justify-content: flex-end;
+}
+
+.task-creation-overlay__button {
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  padding: var(--space-sm) var(--space-lg);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-out);
+  letter-spacing: var(--letter-spacing-slight);
+}
+
+.task-creation-overlay__button--cancel {
+  background-color: var(--color-overlay-base);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-overlay-border);
+}
+
+.task-creation-overlay__button--cancel:hover {
+  background-color: var(--color-overlay-hover);
+  border-color: var(--color-overlay-border-hover);
+}
+
+.task-creation-overlay__button--submit {
+  background-color: var(--color-bg-q2);
+  color: var(--color-text-primary);
+}
+
+.task-creation-overlay__button--submit:hover {
+  opacity: 0.9;
+  transform: var(--transform-hover-lift);
+}
+
+.task-creation-overlay__estimate-group {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.task-creation-overlay__estimate-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  flex: 1;
+}
+
+.task-creation-overlay__estimate-label {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
+  letter-spacing: var(--letter-spacing-slight);
+}
+
+.task-creation-overlay__input--estimate {
+  width: 100%;
+}
+
