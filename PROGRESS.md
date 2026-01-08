@@ -45,8 +45,8 @@ Before major refactors:
 - ✅ **10-second countdown overlay** - Appears after task creation
 - ✅ **Drag-to-quadrant during countdown** - User can drag task to any quadrant
 - ✅ **Auto-placement after timeout** - Task auto-places to correct quadrant based on flags
-- ✅ **Toast notification on auto-place** - Shows "Auto-placed in [Quadrant]"
-- ❌ **Undo button on auto-place toast** - Toast UI supports undo but not wired up
+- ✅ **Toast notification on auto-place** - Shows "Auto-placed in [Quadrant]" (only if quadrant changed)
+- ✅ **Undo button on auto-place toast** - Undo restores previous urgent/important flags
 
 ### Drag & Drop
 - ✅ **Drag tasks between quadrants** - Works anytime after placement
@@ -54,6 +54,7 @@ Before major refactors:
 - ✅ **Quadrant highlighting** - Droppable zones show when dragging over
 - ✅ **Flag updates on drop** - Urgent/important flags update to match target quadrant
 - ✅ **Toast on move** - Shows "Moved X task(s) → [Quadrant]" (aggregates multiple moves)
+- ✅ **Undo on move toast** - Undo button restores previous quadrant for all affected tasks
 
 ### Task Display
 - ✅ **Bubble UI elements** - Tasks display as bubble cards
@@ -61,7 +62,7 @@ Before major refactors:
 - ✅ **Color-coded urgency** - Red (Q1), Yellow (Q2/Q3), Green (Q4) based on quadrant
 - ✅ **Time estimate badges** - Shows formatted time ("Xh Ym" or "Nm") if provided
 - ❌ **Deadline-based color coding** - Not implemented (colors based on quadrant, not due date)
-- ❌ **Task details modal** - Tapping bubble only logs to console
+- ✅ **Task details modal** - Bottom sheet modal opens on task click
 
 ### Toast System
 - ✅ **Toast notifications** - ToastHost component displays toasts
@@ -69,9 +70,9 @@ Before major refactors:
 - ✅ **Manual dismiss** - × button to dismiss toast
 - ✅ **Multiple toast stacking** - Multiple toasts can display
 - ✅ **Toast for task created** - "Task created" message
-- ✅ **Toast for auto-place** - "Auto-placed in [Quadrant]" message
+- ✅ **Toast for auto-place** - "Auto-placed in [Quadrant]" message (only shown if quadrant changed)
 - ✅ **Toast for move** - "Moved X task(s) → [Quadrant]" with aggregation
-- 🟡 **Undo functionality** - UI exists in ToastHost but not wired up for auto-place
+- ✅ **Undo functionality** - Undo button wired up for auto-place and drag move toasts, restores previous quadrant
 
 ---
 
@@ -94,8 +95,38 @@ Before major refactors:
 ### Modal Overlays
 - ✅ **Task creation modal** - Full-screen overlay with form
 - ✅ **Assignment countdown modal** - Full-screen overlay with 2x2 grid
-- ❌ **Task details modal** - Not implemented
+- ✅ **Task details modal** - Bottom sheet with view/edit modes, complete/delete actions
 - ✅ **Backdrop clicks to close** - Works for creation overlay
+
+---
+
+## Milestone B — ✅ Complete
+
+### Task Details Modal
+
+**Implementation:**
+- **Component**: `src/components/TaskDetailsModal.jsx`
+- **State**: `selectedTaskId` in `src/App.jsx:54`
+- **Entry points**:
+  - **Click**: Opens modal via `handleTaskClick()` → `TaskBubble` onClick
+  - **Right-click**: Opens modal in edit mode via `handleTaskContextMenu()`
+  - **Keyboard**: Enter key on focused TaskBubble opens modal
+- **Drag conflict resolved**: PointerSensor with `activationConstraint: { distance: 8 }` allows clicks without triggering drag
+
+**Features Implemented:**
+- Modal displays all task fields: Title, Urgent, Important, Estimate, Priority, Quadrant
+- Edit mode with full form validation
+- Save/Cancel buttons update central state via `handleUpdateTask()`
+- Mark complete: Sets `completedAt` timestamp, removes task from matrix (filtered out by `activeTasks.filter(task => !task.completedAt)`)
+- Delete: Removes task from array and closes modal
+- Toast notifications: "Task updated", "Deleted task", "Completed: {title}"
+- Comprehensive tests: 6 tests in `src/App.taskDetailsModal.test.jsx` covering open, edit, delete, complete, quadrant movement, and persistence
+
+**Persistence:**
+- Task updates, completions, and deletions are persisted to localStorage via existing persistence system
+
+**Explicit Gap:**
+- **Undo for delete/complete not implemented** (only drag undo exists in `src/App.jsx:437-455`)
 
 ---
 
@@ -136,10 +167,10 @@ Before major refactors:
 ## Persistence & Sync
 
 ### Local Storage
-- ❌ **localStorage** - Not implemented
+- ✅ **localStorage** - Tasks persist to localStorage, loaded on app start
 - ❌ **sessionStorage** - Not implemented
 - ❌ **IndexedDB** - Not implemented
-- ❌ **Task persistence** - All tasks lost on page refresh
+- ✅ **Task persistence** - Tasks saved to localStorage on change, loaded on mount (unless initialTasks provided for tests)
 - ✅ **In-memory state** - Tasks exist only in React component state
 
 ### Backend & Sync
@@ -158,18 +189,18 @@ Before major refactors:
 ## Task Management
 
 ### Edit Task
-- ❌ **Edit functionality** - No edit mode or edit button
-- ❌ **Pencil icon** - Not implemented
-- ❌ **Modify fields** - Cannot edit task after creation
+- ✅ **Edit functionality** - Edit mode in task details modal
+- ✅ **Edit button** - "Edit" button in modal header
+- ✅ **Modify fields** - Can edit title, urgent/important, priority, estimate
 
 ### Mark Complete
-- ❌ **Mark complete button** - Not implemented
-- ❌ **Completion tracking** - Not implemented
-- ❌ **Task lifecycle** - Create → Categorize → Active only (no Complete state)
+- ✅ **Mark complete button** - Primary button in task details modal
+- ✅ **Completion tracking** - completedAt timestamp set on completion
+- ✅ **Task lifecycle** - Create → Categorize → Active → Complete (completed tasks hidden from quadrants)
 
 ### Delete Task
-- ❌ **Delete functionality** - No delete button or action
-- ❌ **Task removal** - Cannot delete tasks
+- ✅ **Delete functionality** - Delete button in task details modal with confirmation
+- ✅ **Task removal** - Tasks can be deleted with confirmation step
 
 ---
 
@@ -235,7 +266,7 @@ Before major refactors:
 ### Test Coverage
 - ✅ **Core functionality** - Task creation, assignment, drag-and-drop, auto-placement
 - ✅ **Edge cases** - Empty tasks, invalid inputs, drag to same quadrant
-- ❌ **Task details modal** - Not testable (not implemented)
+- ✅ **Task details modal** - Tests in `App.taskDetailsModal.test.jsx`
 - ❌ **Right Now view** - Not testable (not implemented)
 - ❌ **Notifications** - Not testable (not implemented)
 
@@ -262,9 +293,9 @@ Before major refactors:
 ## Known Issues & Technical Debt
 
 ### Critical
-- ❌ **No persistence** - All tasks lost on page refresh
-- ❌ **Undo not wired up** - Auto-place toast has no undo handler
-- ❌ **No task details** - Cannot view or edit task after creation
+- ✅ **Persistence implemented** - Tasks saved to localStorage, loaded on mount
+- ✅ **Undo wired up** - Auto-place and drag move toasts have undo handlers
+- ✅ **Task details implemented** - Can view, edit, complete, and delete tasks
 
 ### Medium
 - 🟡 **Accessibility gaps** - Needs audit and fixes
@@ -280,16 +311,35 @@ Before major refactors:
 
 ---
 
+## Next Up: Milestone C — Right Now View
+
+### View Infrastructure
+- [ ] **View exists + navigation** - Create Right Now view component and navigation mechanism to switch between Matrix and Right Now views
+
+### Sorting & Prioritization
+- [ ] **Sorting algorithm** - Implement sorting by: easiest to complete (shortest time) → most crucial (Q1 → Q2 → Q3 → Q4)
+
+### List UI
+- [ ] **Item UI** - Display task name, quadrant indicator, time estimate, due date in list format
+
+### Task Actions
+- [ ] **Mark complete from list** - Allow marking tasks complete directly from Right Now view list
+
+### Testing
+- [ ] **Tests** - Comprehensive test coverage for Right Now view functionality
+
+---
+
 ## Next Priorities
 
-1. **Persistence** - Add localStorage to save tasks across refresh
-2. **Undo functionality** - Wire up undo button for auto-place toast
-3. **Task details modal** - Allow viewing and editing tasks
-4. **Mark complete** - Complete task lifecycle
+1. ✅ **Persistence** - localStorage implemented
+2. ✅ **Undo functionality** - Undo wired up for auto-place and drag move toasts
+3. ✅ **Task details modal** - View, edit, complete, delete implemented
+4. ✅ **Mark complete** - Task lifecycle with completion tracking
 5. **Right Now view** - Implement prioritized task list
 6. **Accessibility audit** - Fix ARIA labels, keyboard navigation
 
 ---
 
-**Last Updated:** 2026-01-08 (update when making changes)
+**Last Updated:** 2026-01-09 (update when making changes)
 

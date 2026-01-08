@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { DndContext, DragOverlay } from '@dnd-kit/core';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import Quadrant from './components/Quadrant.jsx';
 import DroppableQuadrant from './components/DroppableQuadrant.jsx';
 import TaskBubble from './components/TaskBubble.jsx';
 import FloatingActionButton from './components/FloatingActionButton.jsx';
 import TaskCreationOverlay from './components/TaskCreationOverlay.jsx';
 import AssignmentCountdownOverlay from './components/AssignmentCountdownOverlay.jsx';
+import TaskDetailsModal from './components/TaskDetailsModal.jsx';
 import ToastHost from './components/ToastHost.jsx';
 import { getQuadrant } from './utils/taskLogic.js';
+import { loadTasks, saveTasks } from './utils/storage.js';
 import './styles/tokens.css';
 import './styles/global.css';
 import './App.css';
@@ -17,16 +19,44 @@ function App({ initialTasks, __test_onDragEnd }) {
     { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m" },
     { id: 2, title: "Email stakeholder", urgent: false, important: true }
   ];
-  const [tasks, setTasks] = useState(initialTasks ?? defaultTasks);
+  
+  // Determine initial tasks: use initialTasks if provided, else try localStorage, else default
+  const getInitialTasks = () => {
+    if (initialTasks != null) {
+      return initialTasks;
+    }
+    const stored = loadTasks();
+    if (stored != null) {
+      return stored;
+    }
+    return defaultTasks;
+  };
+  
+  const [tasks, setTasks] = useState(getInitialTasks);
+  
+  // Helper to check if we should persist (not in test mode)
+  const isTestOrInjected = initialTasks != null;
+  
+  // Configure drag sensor with activation constraint (requires 8px movement before drag starts)
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [pendingAssignmentTaskId, setPendingAssignmentTaskId] = useState(null);
   const [isAssignmentOpen, setIsAssignmentOpen] = useState(false);
   const [assignmentSecondsLeft, setAssignmentSecondsLeft] = useState(10);
   const [toasts, setToasts] = useState([]);
   const [activeDragTaskId, setActiveDragTaskId] = useState(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [startModalInEditMode, setStartModalInEditMode] = useState(false);
   const toastTimeoutsRef = useRef(new Map());
+  const pendingAssignmentSnapshotRef = useRef(null);
 
-  const pushToast = ({ message, tone = "neutral", durationMs = 3000, key = null, meta = {} }) => {
+  const pushToast = ({ message, tone = "neutral", durationMs = 3000, key = null, meta = {}, onUndo = null }) => {
     if (key === "move") {
       // Find existing move toast
       setToasts(prev => {
@@ -53,6 +83,20 @@ function App({ initialTasks, __test_onDragEnd }) {
           // Increment version
           const nextVersion = (existing.version ?? 0) + 1;
           
+          // Collect undo handlers: existing ones + new one
+          const existingUndoHandlers = existing.undoHandlers ?? [];
+          const newUndoHandler = meta?.undoHandler;
+          const nextUndoHandlers = newUndoHandler 
+            ? [...existingUndoHandlers, newUndoHandler]
+            : existingUndoHandlers;
+          
+          // Create combined undo handler if we have any
+          const combinedUndoHandler = nextUndoHandlers.length > 0
+            ? () => {
+                nextUndoHandlers.forEach(handler => handler());
+              }
+            : null;
+          
           // Refresh timer
           const existingTimeout = toastTimeoutsRef.current.get(existing.id);
           if (existingTimeout) {
@@ -68,7 +112,16 @@ function App({ initialTasks, __test_onDragEnd }) {
           // Update toast immutably
           return prev.map(t =>
             t.id === existing.id
-              ? { ...t, movedTaskIds: Array.from(nextSet), lastDest: nextDest, message: nextMessage, version: nextVersion, durationMs }
+              ? { 
+                  ...t, 
+                  movedTaskIds: Array.from(nextSet), 
+                  lastDest: nextDest, 
+                  message: nextMessage, 
+                  version: nextVersion, 
+                  durationMs,
+                  undoHandlers: nextUndoHandlers,
+                  onUndo: combinedUndoHandler
+                }
               : t
           );
         } else {
@@ -84,6 +137,10 @@ function App({ initialTasks, __test_onDragEnd }) {
             ? `Moved ${nextCount} task${nextCount === 1 ? "" : "s"} → ${lastDest}`
             : message || `Moved ${nextCount} task`;
           
+          // Collect undo handler from meta
+          const undoHandler = meta?.undoHandler;
+          const undoHandlers = undoHandler ? [undoHandler] : [];
+          
           const newToast = { 
             id, 
             key: "move",
@@ -92,7 +149,9 @@ function App({ initialTasks, __test_onDragEnd }) {
             movedTaskIds, 
             lastDest, 
             version, 
-            message: nextMessage 
+            message: nextMessage,
+            undoHandlers: undoHandlers,
+            onUndo: undoHandler || null
           };
           
           const timerId = setTimeout(() => {
@@ -107,7 +166,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     } else if (key) {
       // Other keyed toasts (if any) - keep existing behavior
       const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      const newToast = { id, message, tone, durationMs, key };
+      const newToast = { id, message, tone, durationMs, key, onUndo };
       
       setToasts(prev => [...prev, newToast]);
       
@@ -121,7 +180,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     } else {
       // Non-keyed toast (existing behavior)
       const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-      const newToast = { id, message, tone, durationMs };
+      const newToast = { id, message, tone, durationMs, onUndo };
       
       setToasts(prev => [...prev, newToast]);
       
@@ -150,15 +209,52 @@ function App({ initialTasks, __test_onDragEnd }) {
       return;
     }
 
+    // Capture snapshot when assignment overlay opens
+    if (pendingAssignmentTaskId) {
+      const pendingTask = tasks.find(task => task.id === pendingAssignmentTaskId);
+      if (pendingTask) {
+        pendingAssignmentSnapshotRef.current = {
+          id: pendingTask.id,
+          urgent: pendingTask.urgent,
+          important: pendingTask.important
+        };
+      }
+    }
+
     const intervalId = setInterval(() => {
       setAssignmentSecondsLeft((prev) => {
         if (prev <= 1) {
           const pendingTask = tasks.find(task => task.id === pendingAssignmentTaskId);
           if (pendingTask) {
-            const quadrant = getQuadrant(pendingTask);
+            const previousSnapshot = pendingAssignmentSnapshotRef.current;
+            const previousQuadrant = previousSnapshot 
+              ? getQuadrant({ urgent: previousSnapshot.urgent, important: previousSnapshot.important })
+              : null;
+            const currentQuadrant = getQuadrant(pendingTask);
+            
             setIsAssignmentOpen(false);
             setPendingAssignmentTaskId(null);
-            pushToast({ message: `Auto-placed in ${quadrant}`, tone: "neutral" });
+            pendingAssignmentSnapshotRef.current = null;
+            
+            // Only show toast if quadrant actually changed
+            if (previousQuadrant && previousQuadrant !== currentQuadrant) {
+              const undoHandler = () => {
+                setTasks(prevTasks =>
+                  prevTasks.map(task =>
+                    task.id === previousSnapshot.id
+                      ? { ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important }
+                      : task
+                  )
+                );
+              };
+              
+              pushToast({ 
+                message: `Auto-placed in ${currentQuadrant}`, 
+                tone: "neutral",
+                durationMs: 5000,
+                onUndo: undoHandler
+              });
+            }
           }
           return 0;
         }
@@ -178,8 +274,56 @@ function App({ initialTasks, __test_onDragEnd }) {
     };
   }, []);
 
+  // Persist tasks to localStorage when they change (unless in test mode)
+  useEffect(() => {
+    if (!isTestOrInjected) {
+      saveTasks(tasks);
+    }
+  }, [tasks, isTestOrInjected]);
+
   const handleTaskClick = (task) => {
-    console.log('Task clicked:', task);
+    setSelectedTaskId(task.id);
+    setStartModalInEditMode(false);
+  };
+
+  const handleTaskContextMenu = (task) => {
+    setSelectedTaskId(task.id);
+    setStartModalInEditMode(true);
+  };
+
+  const handleCloseTaskModal = () => {
+    setSelectedTaskId(null);
+    setStartModalInEditMode(false);
+  };
+
+  const handleUpdateTask = (taskId, updatedFields) => {
+    setTasks(prevTasks =>
+      prevTasks.map(task =>
+        task.id === taskId
+          ? { ...task, ...updatedFields }
+          : task
+      )
+    );
+    pushToast({ message: "Task updated", tone: "success" });
+  };
+
+  const handleDeleteTask = (taskId) => {
+    setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+    setSelectedTaskId(null);
+    pushToast({ message: "Deleted task", tone: "neutral" });
+  };
+
+  const handleCompleteTask = (taskId) => {
+    setTasks(prevTasks =>
+      prevTasks.map(task =>
+        task.id === taskId
+          ? { ...task, completedAt: Date.now() }
+          : task
+      )
+    );
+    setSelectedTaskId(null);
+    const task = tasks.find(t => t.id === taskId);
+    pushToast({ message: `Completed: ${task?.title || 'task'}`, tone: "success" });
   };
 
   const handleCreateTask = (newTaskData) => {
@@ -271,6 +415,13 @@ function App({ initialTasks, __test_onDragEnd }) {
     const currentQuadrant = getQuadrant(draggedTask);
     const isNoOp = currentQuadrant === quadrantId;
 
+    // Capture previous state for undo
+    const previousSnapshot = {
+      id: draggedTask.id,
+      urgent: draggedTask.urgent,
+      important: draggedTask.important
+    };
+
     setTasks(prevTasks => 
       prevTasks.map(task => {
         const taskIdString = String(task.id);
@@ -283,11 +434,26 @@ function App({ initialTasks, __test_onDragEnd }) {
     setActiveDragTaskId(null);
 
     if (!isNoOp) {
+      // Create undo handler for this move
+      const undoHandler = () => {
+        setTasks(prevTasks =>
+          prevTasks.map(task =>
+            String(task.id) === String(previousSnapshot.id)
+              ? { ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important }
+              : task
+          )
+        );
+      };
+
       pushToast({ 
         key: "move",
         tone: "success",
-        durationMs: 1800,
-        meta: { taskId: String(active.id), lastDest: String(over.id) }
+        durationMs: 5000,
+        meta: { 
+          taskId: String(active.id), 
+          lastDest: String(over.id),
+          undoHandler: undoHandler
+        }
       });
     }
   }, [tasks]);
@@ -330,19 +496,27 @@ function App({ initialTasks, __test_onDragEnd }) {
     return `${estimateMinutesTotal}m`;
   };
 
-  const q1Tasks = tasks.filter(task => getQuadrant(task) === 'Q1');
-  const q2Tasks = tasks.filter(task => getQuadrant(task) === 'Q2');
-  const q3Tasks = tasks.filter(task => getQuadrant(task) === 'Q3');
-  const q4Tasks = tasks.filter(task => getQuadrant(task) === 'Q4');
+  // Filter out completed tasks (completedAt is set)
+  const activeTasks = tasks.filter(task => !task.completedAt);
+  
+  const q1Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q1');
+  const q2Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q2');
+  const q3Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q3');
+  const q4Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q4');
 
   return (
     <div className="app">
-      <DndContext onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={(event) => {
-        if (__test_onDragEnd && typeof __test_onDragEnd === 'function') {
-          __test_onDragEnd(event);
-        }
-        handleDragEnd(event);
-      }}>
+      <DndContext 
+        sensors={sensors}
+        onDragStart={handleDragStart} 
+        onDragCancel={handleDragCancel} 
+        onDragEnd={(event) => {
+          if (__test_onDragEnd && typeof __test_onDragEnd === 'function') {
+            __test_onDragEnd(event);
+          }
+          handleDragEnd(event);
+        }}
+      >
         <div className="app-container">
           <DroppableQuadrant id="Q1">
             <Quadrant
@@ -351,6 +525,7 @@ function App({ initialTasks, __test_onDragEnd }) {
               backgroundColor="var(--color-bg-q1)"
               tasks={q1Tasks}
               onTaskClick={handleTaskClick}
+              onTaskContextMenu={handleTaskContextMenu}
               activeDragTaskId={activeDragTaskId}
               emptyTitle="Nothing critical"
               emptySubtext="No urgent, important tasks right now."
@@ -365,6 +540,7 @@ function App({ initialTasks, __test_onDragEnd }) {
               backgroundColor="var(--color-bg-q2)"
               tasks={q2Tasks}
               onTaskClick={handleTaskClick}
+              onTaskContextMenu={handleTaskContextMenu}
               activeDragTaskId={activeDragTaskId}
               emptyTitle="No strategic work queued"
               emptySubtext="Nothing important waiting without urgency."
@@ -379,6 +555,7 @@ function App({ initialTasks, __test_onDragEnd }) {
               backgroundColor="var(--color-bg-q3)"
               tasks={q3Tasks}
               onTaskClick={handleTaskClick}
+              onTaskContextMenu={handleTaskContextMenu}
               activeDragTaskId={activeDragTaskId}
               emptyTitle="No interruptions"
               emptySubtext="Nothing urgent pulling you off track."
@@ -392,6 +569,7 @@ function App({ initialTasks, __test_onDragEnd }) {
               backgroundColor="var(--color-bg-q4)"
               tasks={q4Tasks}
               onTaskClick={handleTaskClick}
+              onTaskContextMenu={handleTaskContextMenu}
               activeDragTaskId={activeDragTaskId}
               emptyTitle="Clear"
               emptySubtext="No low-value tasks here."
@@ -426,6 +604,15 @@ function App({ initialTasks, __test_onDragEnd }) {
           setIsAssignmentOpen(false);
           setPendingAssignmentTaskId(null);
         }}
+      />
+      <TaskDetailsModal
+        isOpen={selectedTaskId !== null}
+        task={tasks.find(t => t.id === selectedTaskId) || null}
+        onClose={handleCloseTaskModal}
+        onUpdateTask={handleUpdateTask}
+        onDeleteTask={handleDeleteTask}
+        onCompleteTask={handleCompleteTask}
+        startInEdit={startModalInEditMode}
       />
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
     </div>

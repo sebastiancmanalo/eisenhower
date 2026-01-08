@@ -15,6 +15,13 @@
 - Four-quadrant layout with proportional sizing (Q1 prominent at top, Q2/Q3/Q4 stacked below)
 - Assignment view uses 2x2 grid layout during the 10-second countdown
 - Task display as bubble UI elements containing task name and optional time badge
+- Task details modal opens on click, right-click, or Enter key (shows all task fields: title, urgent/important, estimate, priority, quadrant)
+- Edit task functionality with full form validation (via task details modal edit mode)
+- Mark complete functionality (sets completedAt timestamp, removes task from matrix)
+- Delete task functionality (with confirmation, removes task from array)
+- Task lifecycle: Create → Categorize → Active → Complete
+- LocalStorage persistence (tasks persist across page refreshes)
+- Undo functionality for auto-placement and drag moves (via toast undo buttons)
 
 **What's missing/broken:**
 - Pull-down gesture for task creation (only FAB button works)
@@ -23,23 +30,19 @@
 - Complete notification system (push notifications, scheduling, escalation, quiet hours)
 - Right Now view (prioritized task list with sorting algorithm)
 - Swipe navigation between Matrix and Right Now views
-- Task details modal (tapping bubble currently only logs to console)
-- Edit task functionality
-- Mark complete functionality
-- Task deletion
 - Quadrant overflow badges (count badge when >5 tasks)
 - Q1 overload warnings (8+ tasks)
 - Q1 empty celebrations with confetti
-- Undo functionality for auto-placement toast (toast shows but no undo button attached)
+- Undo for delete/complete actions (undo only exists for drag moves and auto-placement)
 - Time estimation ML/heuristics (only manual time entry supported)
-- Local storage/persistence (tasks are lost on page refresh)
 - Onboarding flow (no tutorial or guided first task)
 
 **Known tradeoffs:**
-- **Local-only storage**: All tasks exist only in memory; no persistence across page refreshes
+- **Local-only storage**: Tasks persist to localStorage; no cloud sync or backend
 - **Web-only**: Currently a React web app using Vite; no mobile native app or cross-platform support
 - **No backend**: No authentication, sync, or cloud storage
 - **Manual time estimates only**: No ML/heuristic-based time estimation or learning from past completions
+- **Limited undo**: Undo exists for drag moves and auto-placement, but not for delete/complete actions
 
 ---
 
@@ -122,15 +125,29 @@ Users have many tasks but struggle to decide what to do in any given moment. The
 
 #### 2.1.3 Task Details Modal
 
+✅ **Implemented:**
+- Modal component exists at `src/components/TaskDetailsModal.jsx`
+- Displays all task fields: task name, urgent/important flags, time estimate, priority, quadrant
+- **Entry points:**
+  - Click: Opens modal via `handleTaskClick()` → `TaskBubble` onClick
+  - Right-click: Opens modal in edit mode via `handleTaskContextMenu()`
+  - Keyboard: Enter key on focused TaskBubble opens modal
+- **Edit mode**: Full form with validation, Save/Cancel buttons
+- **Actions**: Edit task, delete task (with confirmation), mark complete
+- **Drag conflict resolved**: PointerSensor with `activationConstraint: { distance: 8 }` allows clicks without triggering drag
+
 ❌ **Not Implemented:**
-- Modal does not exist
-- No display of: task name, due date, time estimate, notification frequency, notes/description
-- No actions: edit mode, delete task, mark complete
-- No pencil icon for editing
-- No mark complete button
+- Due date display (no due date field in task model)
+- Notification frequency display (no notification frequency field)
+- Notes/description field (not in task model)
 
 **Current Behavior:**
-- Tapping a task bubble triggers `handleTaskClick` which only logs to console
+- Tapping a task bubble opens task details modal in view mode
+- Right-clicking opens modal in edit mode
+- Enter key on focused TaskBubble opens modal
+- Mark complete sets `completedAt` timestamp and removes task from matrix
+- Delete removes task from array and closes modal
+- All actions show toast notifications
 
 #### 2.1.4 Time Estimation System
 
@@ -357,7 +374,7 @@ Create → Categorize → Active
 - Create: ✅ Works (via FAB + form)
 - Categorize: ✅ Works (drag to quadrant or auto-place)
 - Active: ✅ Tasks display in quadrants
-- Complete: ❌ No mark complete functionality
+- Complete: ✅ Works (mark complete button in task details modal, sets `completedAt` timestamp, tasks filtered from quadrants)
 - Auto-Drift: ❌ No automatic Q2→Q1 movement
 - Escalate Notifications: ❌ No notification system
 
@@ -472,17 +489,21 @@ Create → Categorize → Active
 
 ### 4.6 Data Persistence
 
+✅ **Implemented:**
+- **localStorage**: Tasks persist to localStorage via `src/utils/storage.js`
+- Tasks saved on every change (create, update, delete, complete, move)
+- Tasks loaded on app mount from localStorage
+- **Note:** sessionStorage and IndexedDB not used (localStorage only)
+
 ❌ **Not Implemented:**
-- No local storage (localStorage/sessionStorage)
-- No IndexedDB
+- No IndexedDB (using localStorage instead)
 - No cloud storage
-- Tasks stored only in React component state
-- All tasks lost on page refresh
+- No backend sync
 
 **Current Behavior:**
-- Default demo tasks load on initial render
-- Any created tasks exist only in memory
-- Page refresh resets to default tasks
+- Tasks persist across page refreshes via localStorage
+- Default demo tasks load if localStorage is empty
+- All task operations (create, update, delete, complete, move) save to localStorage
 
 ---
 
@@ -585,6 +606,10 @@ Create → Categorize → Active
 - Data export
 - Multiple notification personalities
 
+**Nice-to-have / Later Polish:**
+- Undo for delete actions (currently undo only exists for drag moves and auto-placement)
+- Undo for complete actions (currently undo only exists for drag moves and auto-placement)
+
 ### 6.2 Potential Phase 2 Features
 
 **Unchanged from original PRD:**
@@ -636,13 +661,17 @@ Create → Categorize → Active
 1. Time estimate prompt timing: Not implemented (manual entry only)
 2. Notification persistence: Not implemented
 3. Sync conflict resolution: Not applicable (no sync)
-4. Undo functionality: ❌ **Critical Gap** - Undo UI exists but not wired up for auto-placement
+4. Undo functionality: ✅ Implemented for auto-placement and drag moves; ❌ Not implemented for delete/complete actions
 
-**New Questions from Implementation:**
-1. Should we implement undo for auto-placement? (Toast shows but no undo button)
-2. Should we add local storage persistence before backend? (Currently all tasks lost on refresh)
-3. Should we implement task details modal before Right Now view? (Currently no way to view/edit task details)
-4. Should we implement mark complete before notification system? (Core task lifecycle incomplete)
+**Resolved from Previous Questions:**
+1. ✅ Undo for auto-placement: Implemented (undo button wired up and working)
+2. ✅ Local storage persistence: Implemented (tasks persist to localStorage)
+3. ✅ Task details modal: Implemented (view, edit, complete, delete all working)
+4. ✅ Mark complete: Implemented (task lifecycle complete: Create → Active → Complete)
+
+**Remaining Questions:**
+1. Should we implement undo for delete/complete actions? (Currently deferred to nice-to-have / later polish)
+2. Should we implement Right Now view next? (Core feature from PRD still missing)
 
 ---
 
@@ -651,19 +680,22 @@ Create → Categorize → Active
 ### Phase 1: Core MVP (Weeks 1-6)
 
 ✅ **Completed:**
-- Task CRUD operations (Create: ✅, Read: ✅, Update: ✅ via drag, Delete: ❌)
+- Task CRUD operations (Create: ✅, Read: ✅, Update: ✅ via drag and edit modal, Delete: ✅)
 - Basic Eisenhower matrix UI (web platform) - ✅ Implemented
 - Manual drag-to-quadrant - ✅ Implemented
 - Auto-placement logic - ✅ Implemented (10-second countdown)
+- Task details modal - ✅ Implemented (view, edit, complete, delete)
+- Mark complete functionality - ✅ Implemented
+- Task lifecycle - ✅ Implemented (Create → Active → Complete)
+- Local storage persistence - ✅ Implemented
 
 ❌ **Not Completed:**
 - Simple notifications (no escalation) - ❌ No notification system
-- Local storage only - ❌ No persistence
 
 **Current Status:**
-- Phase 1 approximately 60% complete
-- Core UI and drag-and-drop working
-- Missing: persistence, notifications, task details, mark complete
+- Phase 1 approximately 85% complete
+- Core UI, drag-and-drop, task details, and persistence working
+- Missing: notifications
 
 ### Phase 2: Intelligence Layer (Weeks 7-10)
 

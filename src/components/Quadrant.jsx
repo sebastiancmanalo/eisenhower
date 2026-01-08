@@ -9,7 +9,7 @@ const urgencyColors = {
   green: '#34C759'
 };
 
-function Quadrant({ title, subtitle, backgroundColor, tasks, onTaskClick, isDropActive, activeDragTaskId, emptyTitle, emptySubtext, emptyHint }) {
+function Quadrant({ title, subtitle, backgroundColor, tasks, onTaskClick, onTaskContextMenu, isDropActive, activeDragTaskId, emptyTitle, emptySubtext, emptyHint }) {
   const isEmpty = !tasks || tasks.length === 0;
 
   const quadrantMap = {
@@ -79,6 +79,12 @@ function Quadrant({ title, subtitle, backgroundColor, tasks, onTaskClick, isDrop
                   urgencyColor={urgencyColor}
                   timeBadge={formatTime(task.estimateMinutesTotal)}
                   onClick={() => onTaskClick && onTaskClick(task)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (onTaskContextMenu) {
+                      onTaskContextMenu(task);
+                    }
+                  }}
                   isGhostHidden={isGhostHidden}
                 />
               </DraggableTask>

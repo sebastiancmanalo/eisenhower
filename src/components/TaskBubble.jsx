@@ -26,6 +26,7 @@ function TaskBubble({
   timeBadge, 
   isDragging, 
   onClick,
+  onContextMenu,
   assignee,
   dueDate,
   commentCount,
@@ -64,6 +65,15 @@ function TaskBubble({
     <div 
       className={bubbleClassName}
       onClick={onClick}
+      onContextMenu={onContextMenu}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && onClick) {
+          onClick();
+        }
+      }}
+      tabIndex={0}
+      role="button"
+      aria-label={`Task: ${taskName}`}
       style={bubbleStyle}
     >
       {urgencyColor && (
