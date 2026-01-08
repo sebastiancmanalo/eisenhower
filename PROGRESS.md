@@ -132,20 +132,20 @@ Before major refactors:
 
 ## Right Now View
 
-- ❌ **View not implemented** - Entire feature missing
-- ❌ **Sorting algorithm** - Not implemented
-- ❌ **Prioritized list** - Not implemented
-- ❌ **Task details in list** - Not implemented
-- ❌ **Mark complete from list** - Not implemented
-- ❌ **Manual reordering** - Not implemented
+- ✅ **View implemented** - RightNowView component at `src/components/RightNowView.jsx`
+- ✅ **Sorting algorithm** - `sortTasksForRightNow` in `src/utils/rightNowSort.js` (estimate ascending, then quadrant Q1→Q4, then createdAt/id)
+- ✅ **Prioritized list** - Vertical list of tasks sorted by algorithm
+- ✅ **Task details in list** - Displays title, quadrant indicator, estimate badge, priority badge
+- ✅ **Mark complete from list** - Complete button on each task row (uses same completion pathway)
+- ❌ **Manual reordering** - Not implemented (sorting is algorithm-based only)
 
 ---
 
 ## Navigation
 
-- ❌ **View switching** - No way to switch between Matrix and Right Now
+- ✅ **View switching** - Toggle buttons in header to switch between Matrix and Right Now views
 - ❌ **Swipe gestures** - Not implemented (swipe right/left between views)
-- ❌ **Page dots indicator** - No view indicator
+- ❌ **Page dots indicator** - No view indicator (using toggle buttons instead)
 
 ---
 
@@ -253,6 +253,7 @@ Before major refactors:
 ### Unit Tests
 - ✅ **getQuadrant utility** - Tests in `taskLogic.test.js`
 - ✅ **formatEstimateMinutes utility** - Tests in `timeFormat.test.js`
+- ✅ **sortTasksForRightNow utility** - Tests in `rightNowSort.test.js`
 - ✅ **Quadrant component** - Tests in `Quadrant.test.jsx`
 
 ### Integration Tests
@@ -262,15 +263,17 @@ Before major refactors:
 - ✅ **Drag and drop** - Tests in `App.dragDrop.test.jsx`
 - ✅ **Task movement toasts** - Tests verify toast messages
 - ✅ **Time estimate calculation** - Tests verify estimateMinutesTotal calculation
+- ✅ **Right Now view** - Tests in `App.rightNowView.test.jsx` (rendering, sorting, click handlers, completion, navigation)
 
 ### Test Coverage
 - ✅ **Core functionality** - Task creation, assignment, drag-and-drop, auto-placement
 - ✅ **Edge cases** - Empty tasks, invalid inputs, drag to same quadrant
 - ✅ **Task details modal** - Tests in `App.taskDetailsModal.test.jsx`
-- ❌ **Right Now view** - Not testable (not implemented)
+- ✅ **Right Now view** - Tests in `App.rightNowView.test.jsx` (9 tests covering rendering, sorting, click handlers, completion, navigation)
+- ✅ **Right Now sorting** - Tests in `rightNowSort.test.js` (9 tests covering estimate, quadrant, tie-breaker sorting)
 - ❌ **Notifications** - Not testable (not implemented)
 
-**Current State:** Good test coverage for implemented features, but missing features have no tests
+**Current State:** Good test coverage for implemented features, including Right Now view and sorting algorithm
 
 ---
 
@@ -300,7 +303,7 @@ Before major refactors:
 ### Medium
 - 🟡 **Accessibility gaps** - Needs audit and fixes
 - 🟡 **No keyboard navigation** - Drag-and-drop not keyboard accessible
-- ❌ **Right Now view missing** - Core feature from PRD not implemented
+- ✅ **Right Now view implemented** - Core feature from PRD complete
 - ❌ **No notifications** - Core feature from PRD not implemented
 
 ### Low
@@ -311,22 +314,32 @@ Before major refactors:
 
 ---
 
-## Next Up: Milestone C — Right Now View
+## Milestone C — ✅ Complete
 
-### View Infrastructure
-- [ ] **View exists + navigation** - Create Right Now view component and navigation mechanism to switch between Matrix and Right Now views
+### Right Now View
 
-### Sorting & Prioritization
-- [ ] **Sorting algorithm** - Implement sorting by: easiest to complete (shortest time) → most crucial (Q1 → Q2 → Q3 → Q4)
+**Implementation:**
+- **Component**: `src/components/RightNowView.jsx` (and CSS)
+- **Sorting Utility**: `src/utils/rightNowSort.js` exporting `sortTasksForRightNow(tasks)`
+- **Navigation**: Toggle buttons in App header (`app-header__view-toggle` in `App.jsx`)
+- **State**: View state `"matrix" | "rightNow"` in `App.jsx`
 
-### List UI
-- [ ] **Item UI** - Display task name, quadrant indicator, time estimate, due date in list format
+**Features Implemented:**
+- Vertical list of tasks sorted by algorithm (estimate ascending, then quadrant Q1→Q4, then createdAt/id)
+- Displays: task title, quadrant indicator (Q1/Q2/Q3/Q4 with color), estimate badge (using `formatEstimateMinutes`), priority badge (if present)
+- Clicking a task row opens TaskDetailsModal via existing `handleTaskClick`
+- Mark complete button on each row uses existing `handleCompleteTask` (sets completedAt, filters out from both views)
+- Empty state when no active tasks ("All done!" message)
+- View switching between Matrix and Right Now via toggle buttons
+- Comprehensive tests: 9 tests in `App.rightNowView.test.jsx`, 9 tests in `rightNowSort.test.js`
 
-### Task Actions
-- [ ] **Mark complete from list** - Allow marking tasks complete directly from Right Now view list
+**Sorting Algorithm:**
+1. `estimateMinutesTotal` ascending (missing estimate → default 30 minutes)
+2. Quadrant order: Q1, Q2, Q3, Q4 (using `getQuadrant`)
+3. Stable tie-breaker: `createdAt` (if present), else `id` (ascending)
 
-### Testing
-- [ ] **Tests** - Comprehensive test coverage for Right Now view functionality
+**Explicit Gap:**
+- **Manual reordering** not implemented (sorting is algorithm-based only, no drag-to-reorder in Right Now view)
 
 ---
 
@@ -336,10 +349,10 @@ Before major refactors:
 2. ✅ **Undo functionality** - Undo wired up for auto-place and drag move toasts
 3. ✅ **Task details modal** - View, edit, complete, delete implemented
 4. ✅ **Mark complete** - Task lifecycle with completion tracking
-5. **Right Now view** - Implement prioritized task list
+5. ✅ **Right Now view** - Prioritized task list implemented
 6. **Accessibility audit** - Fix ARIA labels, keyboard navigation
 
 ---
 
-**Last Updated:** 2026-01-09 (update when making changes)
+**Last Updated:** 2026-01-09 (Milestone C: Right Now View completed)
 

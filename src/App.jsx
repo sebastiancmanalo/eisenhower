@@ -7,6 +7,8 @@ import FloatingActionButton from './components/FloatingActionButton.jsx';
 import TaskCreationOverlay from './components/TaskCreationOverlay.jsx';
 import AssignmentCountdownOverlay from './components/AssignmentCountdownOverlay.jsx';
 import TaskDetailsModal from './components/TaskDetailsModal.jsx';
+import RightNowView from './components/RightNowView.jsx';
+import PageDots from './components/PageDots.jsx';
 import ToastHost from './components/ToastHost.jsx';
 import { getQuadrant } from './utils/taskLogic.js';
 import { loadTasks, saveTasks } from './utils/storage.js';
@@ -53,6 +55,7 @@ function App({ initialTasks, __test_onDragEnd }) {
   const [activeDragTaskId, setActiveDragTaskId] = useState(null);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [startModalInEditMode, setStartModalInEditMode] = useState(false);
+  const [view, setView] = useState('matrix'); // 'matrix' | 'rightNow'
   const toastTimeoutsRef = useRef(new Map());
   const pendingAssignmentSnapshotRef = useRef(null);
 
@@ -281,6 +284,38 @@ function App({ initialTasks, __test_onDragEnd }) {
     }
   }, [tasks, isTestOrInjected]);
 
+  // Arrow key navigation for view switching
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      // Ignore key events when focused element is input/textarea/select or contentEditable
+      const activeElement = document.activeElement;
+      if (
+        activeElement &&
+        (activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.tagName === 'SELECT' ||
+          activeElement.isContentEditable ||
+          activeElement.getAttribute('contenteditable') === 'true')
+      ) {
+        return;
+      }
+
+      // ArrowLeft => setView("matrix")
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setView('matrix');
+      }
+      // ArrowRight => setView("rightNow")
+      else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        setView('rightNow');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleTaskClick = (task) => {
     setSelectedTaskId(task.id);
     setStartModalInEditMode(false);
@@ -506,89 +541,99 @@ function App({ initialTasks, __test_onDragEnd }) {
 
   return (
     <div className="app">
-      <DndContext 
-        sensors={sensors}
-        onDragStart={handleDragStart} 
-        onDragCancel={handleDragCancel} 
-        onDragEnd={(event) => {
-          if (__test_onDragEnd && typeof __test_onDragEnd === 'function') {
-            __test_onDragEnd(event);
-          }
-          handleDragEnd(event);
-        }}
-      >
-        <div className="app-container">
-          <DroppableQuadrant id="Q1">
-            <Quadrant
-              title="Do First"
-              subtitle="Urgent & Important"
-              backgroundColor="var(--color-bg-q1)"
-              tasks={q1Tasks}
-              onTaskClick={handleTaskClick}
-              onTaskContextMenu={handleTaskContextMenu}
-              activeDragTaskId={activeDragTaskId}
-              emptyTitle="Nothing critical"
-              emptySubtext="No urgent, important tasks right now."
-              emptyHint="Keep it that way."
-            />
-          </DroppableQuadrant>
-          
-          <DroppableQuadrant id="Q2">
-            <Quadrant
-              title="Schedule"
-              subtitle="Important, Not Urgent"
-              backgroundColor="var(--color-bg-q2)"
-              tasks={q2Tasks}
-              onTaskClick={handleTaskClick}
-              onTaskContextMenu={handleTaskContextMenu}
-              activeDragTaskId={activeDragTaskId}
-              emptyTitle="No strategic work queued"
-              emptySubtext="Nothing important waiting without urgency."
-              emptyHint="Add something you want to invest in."
-            />
-          </DroppableQuadrant>
-          
-          <DroppableQuadrant id="Q3">
-            <Quadrant
-              title="Delegate"
-              subtitle="Urgent, Not Important"
-              backgroundColor="var(--color-bg-q3)"
-              tasks={q3Tasks}
-              onTaskClick={handleTaskClick}
-              onTaskContextMenu={handleTaskContextMenu}
-              activeDragTaskId={activeDragTaskId}
-              emptyTitle="No interruptions"
-              emptySubtext="Nothing urgent pulling you off track."
-            />
-          </DroppableQuadrant>
-          
-          <DroppableQuadrant id="Q4">
-            <Quadrant
-              title="Delete"
-              subtitle="Not Important, Not Urgent"
-              backgroundColor="var(--color-bg-q4)"
-              tasks={q4Tasks}
-              onTaskClick={handleTaskClick}
-              onTaskContextMenu={handleTaskContextMenu}
-              activeDragTaskId={activeDragTaskId}
-              emptyTitle="Clear"
-              emptySubtext="No low-value tasks here."
-            />
-          </DroppableQuadrant>
-        </div>
-        <DragOverlay>
-          {activeTask ? (
-            <div className="drag-overlay-card">
-              <TaskBubble
-                taskName={activeTask.title || 'Untitled Task'}
-                urgency={getUrgencyFromTask(activeTask)}
-                urgencyColor={urgencyColors[getUrgencyFromTask(activeTask)]}
-                timeBadge={formatTime(activeTask.estimateMinutesTotal)}
+      {view === 'matrix' ? (
+        <DndContext 
+          sensors={sensors}
+          onDragStart={handleDragStart} 
+          onDragCancel={handleDragCancel} 
+          onDragEnd={(event) => {
+            if (__test_onDragEnd && typeof __test_onDragEnd === 'function') {
+              __test_onDragEnd(event);
+            }
+            handleDragEnd(event);
+          }}
+        >
+          <div className="app-container">
+            <DroppableQuadrant id="Q1">
+              <Quadrant
+                title="Do First"
+                subtitle="Urgent & Important"
+                backgroundColor="var(--color-bg-q1)"
+                tasks={q1Tasks}
+                onTaskClick={handleTaskClick}
+                onTaskContextMenu={handleTaskContextMenu}
+                activeDragTaskId={activeDragTaskId}
+                emptyTitle="Nothing critical"
+                emptySubtext="No urgent, important tasks right now."
+                emptyHint="Keep it that way."
               />
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+            </DroppableQuadrant>
+            
+            <DroppableQuadrant id="Q2">
+              <Quadrant
+                title="Schedule"
+                subtitle="Important, Not Urgent"
+                backgroundColor="var(--color-bg-q2)"
+                tasks={q2Tasks}
+                onTaskClick={handleTaskClick}
+                onTaskContextMenu={handleTaskContextMenu}
+                activeDragTaskId={activeDragTaskId}
+                emptyTitle="No strategic work queued"
+                emptySubtext="Nothing important waiting without urgency."
+                emptyHint="Add something you want to invest in."
+              />
+            </DroppableQuadrant>
+            
+            <DroppableQuadrant id="Q3">
+              <Quadrant
+                title="Delegate"
+                subtitle="Urgent, Not Important"
+                backgroundColor="var(--color-bg-q3)"
+                tasks={q3Tasks}
+                onTaskClick={handleTaskClick}
+                onTaskContextMenu={handleTaskContextMenu}
+                activeDragTaskId={activeDragTaskId}
+                emptyTitle="No interruptions"
+                emptySubtext="Nothing urgent pulling you off track."
+              />
+            </DroppableQuadrant>
+            
+            <DroppableQuadrant id="Q4">
+              <Quadrant
+                title="Delete"
+                subtitle="Not Important, Not Urgent"
+                backgroundColor="var(--color-bg-q4)"
+                tasks={q4Tasks}
+                onTaskClick={handleTaskClick}
+                onTaskContextMenu={handleTaskContextMenu}
+                activeDragTaskId={activeDragTaskId}
+                emptyTitle="Clear"
+                emptySubtext="No low-value tasks here."
+              />
+            </DroppableQuadrant>
+          </div>
+          <DragOverlay>
+            {activeTask ? (
+              <div className="drag-overlay-card">
+                <TaskBubble
+                  taskName={activeTask.title || 'Untitled Task'}
+                  urgency={getUrgencyFromTask(activeTask)}
+                  urgencyColor={urgencyColors[getUrgencyFromTask(activeTask)]}
+                  timeBadge={formatTime(activeTask.estimateMinutesTotal)}
+                />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        <div className="app-container">
+          <RightNowView
+            tasks={tasks}
+            onTaskClick={handleTaskClick}
+            onComplete={handleCompleteTask}
+          />
+        </div>
+      )}
       <FloatingActionButton onClick={() => setIsCreateOpen(true)} />
       <TaskCreationOverlay
         isOpen={isCreateOpen}
@@ -615,6 +660,7 @@ function App({ initialTasks, __test_onDragEnd }) {
         startInEdit={startModalInEditMode}
       />
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
+      <PageDots active={view} onSelect={setView} />
     </div>
   );
 }
