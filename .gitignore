@@ -35,7 +35,12 @@ coverage
 # Build outputs
 build
 *.tsbuildinfo
+.vite/
 
 # Backup directories
 backups/
+
+
+
+
 

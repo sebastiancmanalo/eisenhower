@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { DndContext, DragOverlay } from '@dnd-kit/core';
 import Quadrant from './components/Quadrant.jsx';
 import DroppableQuadrant from './components/DroppableQuadrant.jsx';
@@ -12,7 +12,7 @@ import './styles/tokens.css';
 import './styles/global.css';
 import './App.css';
 
-function App({ initialTasks }) {
+function App({ initialTasks, __test_onDragEnd }) {
   const defaultTasks = [
     { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m" },
     { id: 2, title: "Email stakeholder", urgent: false, important: true }
@@ -238,7 +238,7 @@ function App({ initialTasks }) {
     setActiveDragTaskId(null);
   };
 
-  const handleDragEnd = (event) => {
+  const handleDragEnd = useCallback((event) => {
     const { active, over } = event;
 
     if (!over || !over.id) {
@@ -290,7 +290,14 @@ function App({ initialTasks }) {
         meta: { taskId: String(active.id), lastDest: String(over.id) }
       });
     }
-  };
+  }, [tasks]);
+
+  // Expose handler to test seam if provided
+  useEffect(() => {
+    if (__test_onDragEnd && typeof __test_onDragEnd === 'object' && __test_onDragEnd.setHandler) {
+      __test_onDragEnd.setHandler(handleDragEnd);
+    }
+  }, [__test_onDragEnd, handleDragEnd]);
 
   const pendingTask = pendingAssignmentTaskId
     ? tasks.find(task => task.id === pendingAssignmentTaskId) || null
@@ -330,7 +337,12 @@ function App({ initialTasks }) {
 
   return (
     <div className="app">
-      <DndContext onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
+      <DndContext onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={(event) => {
+        if (__test_onDragEnd && typeof __test_onDragEnd === 'function') {
+          __test_onDragEnd(event);
+        }
+        handleDragEnd(event);
+      }}>
         <div className="app-container">
           <DroppableQuadrant id="Q1">
             <Quadrant

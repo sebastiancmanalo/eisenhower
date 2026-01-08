@@ -8,7 +8,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "snapshot": "bash scripts/snapshot.sh",
-    "preflight": "bash scripts/preflight.sh"
+    "preflight": "bash scripts/preflight.sh",
+    "status": "echo '📋 Reminder: Update PROGRESS.md and CHANGELOG_DEV.md after completing a step!'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
