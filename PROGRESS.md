@@ -76,6 +76,15 @@
 - Push notifications backend
 
 ### ✅ Milestone E: Complete
+**Import/Export + Data Migration UX**
+
+**Implemented:**
+- ✅ **E1 Export JSON** - Created `src/data/transfer/taskTransfer.js` with `serializeTasksForExport()` function that returns JSON string with version 1, exportedAt ISO timestamp, tasks array, and meta object (app: "Eisenhower", schema: "tasks"). Export triggers browser download with filename `eisenhower-tasks-YYYY-MM-DD.json`. Toast: "Exported tasks".
+- ✅ **E2 Import JSON (replace/merge)** - Created `parseImportedTasks()` function that safely parses JSON with try/catch, supports versioned object format (version 1) and legacy array format, validates tasks have id and title/name, returns `{ tasks, meta }`. Created `mergeTasks()` function that merges by id (incoming wins for same id), preserves stable ordering (existing order kept, new tasks appended at end). Added ImportConfirmDialog component with Replace and Merge actions, shows incoming task count. Replace sets tasks = incoming tasks, Merge uses mergeTasks(current, incoming). Persists via TaskStore automatically via existing debounced save. Toasts: success "Imported X tasks" / "Merged X tasks", failure "Import failed: <message>".
+- ✅ **E3 Validation + error toasts** - parseImportedTasks validates JSON parsing, version support, tasks array structure, and each task has id and title/name. Throws user-friendly Error messages for invalid/corrupt inputs. Error toasts show specific error messages.
+- ✅ **E4 Transfer unit tests** - Created `src/data/transfer/taskTransfer.test.js` with comprehensive tests: serialize produces valid JSON with version 1, tasks array, meta; parse supports versioned object and legacy array; parse fails gracefully on invalid JSON; mergeTasks dedupes by id and preserves order (existing order kept, new appended). Created `src/App.taskTransfer.test.jsx` integration test: export and persist after unmount/remount, Replace/Merge dialog handling, error handling for invalid files.
+
+### ✅ Milestone F: Complete
 **Notification system scaffolding (local-only, backend-ready)**
 
 **Implemented:**
@@ -288,6 +297,45 @@ See "Current Status (Today)" section above for implementation details.
 - Remote storage persistence
 
 **Storage seam ready for Supabase/Firebase via taskRepository selection** - Simply implement RemoteTaskRepositoryStub methods with real Supabase/Firebase client code, set `VITE_TASK_REPO=stub` (or rename env var), and all UI code will use remote storage without changes.
+
+### ✅ D5: Storage layer abstraction (Complete)
+
+**Implemented:**
+- ✅ **TaskStore.js** - Created `src/data/storage/TaskStore.js` with interface-style module:
+  - `loadTasks()`: returns `{ tasks, meta }` where meta includes version
+  - `saveTasks(tasks)`: persists tasks to localStorage using key "eisenhower.tasks.v1"
+  - `clearTasks()`: clears persisted data
+  - Includes schema versioning (supports version 0 legacy array and version 1 versioned format)
+  - Safe parse fallback: corrupt JSON returns empty tasks array instead of crashing
+  - Handles localStorage errors gracefully
+- ✅ **RemoteTaskStore.stub.js** - Created `src/data/storage/RemoteTaskStore.stub.js` with same function signatures as TaskStore but throws "Not configured" errors. Future-proofed for Supabase/Firebase replacement.
+- ✅ **storeConfig.js** - Created `src/data/storage/storeConfig.js` with single config flag (`VITE_STORAGE_TYPE`) that chooses local vs remote (default: local). Uses ES module imports.
+- ✅ **App.jsx refactor** - Refactored App.jsx to use TaskStore:
+  - On app mount: calls `loadTasks()` and initializes state from `{ tasks }` result (unless `initialTasks` prop provided for tests)
+  - On tasks change: calls `saveTasks(tasks)` with debounce (250ms, within 150-300ms range) to avoid spam
+  - Removed dependency on repository pattern, now uses simpler TaskStore interface
+  - Removed auth state dependency from load effect (storage abstraction handles this at config level)
+- ✅ **Reset action** - Updated SettingsMenu "Reset local data" action to call `taskStore.clearTasks()` and reset state to default tasks.
+- ✅ **Tests** - Created `src/data/storage/TaskStore.test.js` with unit tests:
+  - Load tests: empty storage, version 1 format, legacy array format, corrupt JSON, invalid formats, localStorage errors
+  - Save tests: normal save, empty array, invalid input, large array guardrails, localStorage errors
+  - Clear tests: normal clear, localStorage errors
+  - Integration tests: save/load cycle, clear/reload cycle
+- ✅ **Integration test** - Updated `src/App.persistence.test.jsx`:
+  - Added unmount/remount test: creates task, unmounts App, remounts App, verifies task persists and reloads
+  - Updated to use TaskStore instead of LocalTaskRepository
+  - All existing persistence tests updated and passing
+
+**Storage Abstraction Benefits:**
+- Simple interface: just loadTasks/saveTasks/clearTasks
+- Future-proof: swap localStorage <-> Supabase/Firebase by changing config flag
+- No App logic changes needed when switching storage backends
+- Graceful error handling: never crashes on storage errors
+- Schema versioning built-in: supports migration from version 0 to version 1
+
+**Non-goals (explicitly NOT implemented yet):**
+- Real Supabase/Firebase integration (stub throws "Not configured")
+- Remote storage persistence (still localStorage-only)
 
 ---
 
@@ -507,5 +555,5 @@ See "Current Status (Today)" section above for implementation details.
 
 ---
 
-**Last Updated:** 2026-01-08 (Status update: Milestones A, B, C, D1, D2, D3, D4 complete - D4: Future-proof persistence with versioned schema (v1), repository selection seam (VITE_TASK_REPO env var), RemoteTaskRepositoryStub for Supabase/Firebase placeholder, export/import functionality (JSON files with version metadata), SettingsMenu UI (export/import/reset), comprehensive tests for versioning, migrations, corruption handling, and import/export flows. Storage format: `{ version: 1, tasks: [...] }` with auto-migration from legacy array format.)
+**Last Updated:** 2026-01-08 (Status update: Milestones A, B, C, D1, D2, D3, D4, D5 complete - D5: Storage layer abstraction with TaskStore.js interface (loadTasks/saveTasks/clearTasks), RemoteTaskStore.stub.js for future Supabase/Firebase swap, storeConfig.js for local/remote selection (default local), App.jsx refactored to use TaskStore with debounced saves (250ms), reset action uses TaskStore.clearTasks(), unit tests for TaskStore, integration test for unmount/remount persistence. Storage abstraction future-proofs swap from localStorage to remote storage without App logic changes.)
 

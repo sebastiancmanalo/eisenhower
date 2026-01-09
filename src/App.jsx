@@ -11,13 +11,14 @@ import RightNowView from './components/RightNowView.jsx';
 import PageDots from './components/PageDots.jsx';
 import ToastHost from './components/ToastHost.jsx';
 import SettingsMenu from './components/SettingsMenu.jsx';
+import ImportConfirmDialog from './components/ImportConfirmDialog.jsx';
 import { getQuadrant } from './utils/taskLogic.js';
 import { getDeadlineUrgency } from './utils/deadlineUrgency.js';
 import { normalizeTask } from './utils/normalizeTask.js';
-import { getTaskRepository } from './data/index.js';
+import { getStore } from './data/storage/storeConfig.js';
 import { useAuth } from './auth/AuthProvider.jsx';
 import { updateTaskSyncFields } from './utils/updateTaskSyncFields.js';
-import { exportTasks, parseImportFile, mergeTasksById } from './utils/exportImport.js';
+import { serializeTasksForExport, parseImportedTasks, mergeTasks } from './data/transfer/taskTransfer.js';
 import { loadPreferences, savePreferences } from './notifications/notificationPreferences.js';
 import { scheduleNext } from './notifications/NotificationScheduler.js';
 import { show as showInAppNotification } from './notifications/InAppNotifier.js';
@@ -34,8 +35,8 @@ function App({ initialTasks, __test_onDragEnd }) {
     { id: 2, title: "Email stakeholder", urgent: false, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'medium' }
   ];
   
-  // Get repository based on auth context
-  const taskRepository = getTaskRepository(auth);
+  // Get storage implementation (local or remote)
+  const taskStore = getStore();
   
   const [tasks, setTasks] = useState(() => {
     // If initialTasks provided (test mode), use them directly
@@ -46,30 +47,13 @@ function App({ initialTasks, __test_onDragEnd }) {
     return [];
   });
   
-  // Track if we've loaded tasks from repository
+  // Track if we've loaded tasks from storage
   const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   
   // Helper to check if we should persist (not in test mode)
   const isTestOrInjected = initialTasks != null;
   
-  // Load tasks from repository on mount or when auth state changes (unless in test mode)
-  const loadTasksFromRepository = async () => {
-    try {
-      const loaded = await taskRepository.loadTasks();
-      if (loaded && loaded.length > 0) {
-        setTasks(loaded);
-      } else {
-        // No tasks in storage, use defaults
-        setTasks(defaultTasks);
-      }
-      setHasLoadedTasks(true);
-    } catch (error) {
-      console.error('Failed to load tasks:', error);
-      setTasks(defaultTasks);
-      setHasLoadedTasks(true);
-    }
-  };
-  
+  // Load tasks from storage on mount (unless in test mode)
   useEffect(() => {
     if (isTestOrInjected) {
       setHasLoadedTasks(true);
@@ -79,8 +63,23 @@ function App({ initialTasks, __test_onDragEnd }) {
     let cancelled = false;
     
     const loadInitialTasks = async () => {
-      await loadTasksFromRepository();
-      if (cancelled) return;
+      try {
+        const { tasks: loadedTasks } = await taskStore.loadTasks();
+        if (cancelled) return;
+        
+        if (loadedTasks && loadedTasks.length > 0) {
+          setTasks(loadedTasks);
+        } else {
+          // No tasks in storage, use defaults
+          setTasks(defaultTasks);
+        }
+        setHasLoadedTasks(true);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to load tasks:', error);
+        setTasks(defaultTasks);
+        setHasLoadedTasks(true);
+      }
     };
     
     loadInitialTasks();
@@ -88,7 +87,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     return () => {
       cancelled = true;
     };
-  }, [isTestOrInjected, auth.status]);
+  }, [isTestOrInjected]);
   
   // Configure drag sensor with activation constraint (requires 8px movement before drag starts)
   const sensors = useSensors(
@@ -109,6 +108,10 @@ function App({ initialTasks, __test_onDragEnd }) {
   const [view, setView] = useState('matrix'); // 'matrix' | 'rightNow'
   const toastTimeoutsRef = useRef(new Map());
   const pendingAssignmentSnapshotRef = useRef(null);
+  
+  // Import confirmation dialog state
+  const [importConfirmOpen, setImportConfirmOpen] = useState(false);
+  const [pendingImportedTasks, setPendingImportedTasks] = useState(null);
   
   // Notification system state
   const [notificationPreferences, setNotificationPreferences] = useState(() => loadPreferences());
@@ -350,14 +353,23 @@ function App({ initialTasks, __test_onDragEnd }) {
     };
   }, []);
 
-  // Handle auth state changes - reload tasks when auth changes
+  // Handle auth state changes - reload tasks when auth changes (if using remote store in future)
   const handleAuthStateChange = () => {
     if (!isTestOrInjected) {
-      loadTasksFromRepository();
+      // Reload tasks from storage
+      taskStore.loadTasks().then(({ tasks: loadedTasks }) => {
+        if (loadedTasks && loadedTasks.length > 0) {
+          setTasks(loadedTasks);
+        } else {
+          setTasks(defaultTasks);
+        }
+      }).catch((error) => {
+        console.error('Failed to reload tasks:', error);
+      });
     }
   };
 
-  // Debounced save to repository when tasks change (unless in test mode or not yet loaded)
+  // Debounced save to storage when tasks change (unless in test mode or not yet loaded)
   const saveDebounceRef = useRef(null);
   
   useEffect(() => {
@@ -372,14 +384,14 @@ function App({ initialTasks, __test_onDragEnd }) {
       clearTimeout(saveDebounceRef.current);
     }
     
-    // Set new timeout for debounced save (200ms debounce)
+    // Set new timeout for debounced save (250ms debounce, within 150-300ms range)
     saveDebounceRef.current = setTimeout(async () => {
       try {
-        await taskRepository.saveTasks(tasks);
+        await taskStore.saveTasks(tasks);
       } catch (error) {
         console.error('Failed to save tasks:', error);
       }
-    }, 200);
+    }, 250);
     
     // Cleanup timeout on unmount or when tasks change before timeout
     return () => {
@@ -387,7 +399,7 @@ function App({ initialTasks, __test_onDragEnd }) {
         clearTimeout(saveDebounceRef.current);
       }
     };
-  }, [tasks, isTestOrInjected, hasLoadedTasks]);
+  }, [tasks, isTestOrInjected, hasLoadedTasks, taskStore]);
 
   // Arrow key navigation for view switching
   useEffect(() => {
@@ -570,8 +582,18 @@ function App({ initialTasks, __test_onDragEnd }) {
 
   const handleExportTasks = () => {
     try {
-      exportTasks(tasks);
-      pushToast({ message: `Exported ${tasks.length} task${tasks.length !== 1 ? 's' : ''}`, tone: "success" });
+      const jsonString = serializeTasksForExport(tasks);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateStr = new Date().toISOString().split('T')[0];
+      link.download = `eisenhower-tasks-${dateStr}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      pushToast({ message: 'Exported tasks', tone: "success" });
     } catch (error) {
       console.error('Export failed:', error);
       pushToast({ message: 'Failed to export tasks', tone: "error" });
@@ -581,11 +603,7 @@ function App({ initialTasks, __test_onDragEnd }) {
   const handleImportTasks = async (file) => {
     try {
       const text = await file.text();
-      const parsed = parseImportFile(text);
-      
-      // Parse will return { version, tasks }
-      // We can handle version 0 (array) or version 1 (versioned) format
-      let importedTasks = parsed.tasks;
+      const { tasks: importedTasks } = parseImportedTasks(text);
       
       if (!Array.isArray(importedTasks) || importedTasks.length === 0) {
         pushToast({ message: 'No valid tasks found in file', tone: "error" });
@@ -613,35 +631,88 @@ function App({ initialTasks, __test_onDragEnd }) {
         return;
       }
 
-      // Merge with existing tasks by id
-      const mergedTasks = mergeTasksById(tasks, normalizedImported);
+      // Store pending imported tasks and show confirmation dialog
+      setPendingImportedTasks(normalizedImported);
+      setImportConfirmOpen(true);
+    } catch (error) {
+      console.error('Import failed:', error);
+      pushToast({ message: `Import failed: ${error.message}`, tone: "error" });
+    }
+  };
+
+  const handleImportReplace = async () => {
+    if (!pendingImportedTasks) return;
+    
+    try {
+      setTasks(pendingImportedTasks);
       
-      // Update state and save to repository
-      setTasks(mergedTasks);
-      
-      // Save will happen automatically via useEffect, but we can also save immediately
       if (!isTestOrInjected) {
         try {
-          await taskRepository.saveTasks(mergedTasks);
+          await taskStore.saveTasks(pendingImportedTasks);
         } catch (error) {
           console.error('Failed to save imported tasks:', error);
           pushToast({ message: 'Imported but failed to save to storage', tone: "error" });
+          setImportConfirmOpen(false);
+          setPendingImportedTasks(null);
           return;
         }
       }
 
-      pushToast({ message: `Imported ${normalizedImported.length} task${normalizedImported.length !== 1 ? 's' : ''}`, tone: "success" });
+      pushToast({ message: `Imported ${pendingImportedTasks.length} task${pendingImportedTasks.length !== 1 ? 's' : ''}`, tone: "success" });
+      setImportConfirmOpen(false);
+      setPendingImportedTasks(null);
     } catch (error) {
-      console.error('Import failed:', error);
-      pushToast({ message: error.message || 'Failed to import tasks', tone: "error" });
+      console.error('Replace import failed:', error);
+      pushToast({ message: 'Failed to import tasks', tone: "error" });
+      setImportConfirmOpen(false);
+      setPendingImportedTasks(null);
     }
+  };
+
+  const handleImportMerge = async () => {
+    if (!pendingImportedTasks) return;
+    
+    try {
+      const mergedTasks = mergeTasks(tasks, pendingImportedTasks);
+      setTasks(mergedTasks);
+      
+      if (!isTestOrInjected) {
+        try {
+          await taskStore.saveTasks(mergedTasks);
+        } catch (error) {
+          console.error('Failed to save merged tasks:', error);
+          pushToast({ message: 'Merged but failed to save to storage', tone: "error" });
+          setImportConfirmOpen(false);
+          setPendingImportedTasks(null);
+          return;
+        }
+      }
+
+      const newCount = pendingImportedTasks.filter(imported => 
+        !tasks.some(existing => String(existing.id) === String(imported.id))
+      ).length;
+      
+      pushToast({ message: `Merged ${newCount} task${newCount !== 1 ? 's' : ''}`, tone: "success" });
+      setImportConfirmOpen(false);
+      setPendingImportedTasks(null);
+    } catch (error) {
+      console.error('Merge import failed:', error);
+      pushToast({ message: 'Failed to merge tasks', tone: "error" });
+      setImportConfirmOpen(false);
+      setPendingImportedTasks(null);
+    }
+  };
+
+  const handleImportCancel = () => {
+    setImportConfirmOpen(false);
+    setPendingImportedTasks(null);
   };
 
   const handleResetTasks = async () => {
     try {
-      // Clear repository storage
+      // Clear storage
       if (!isTestOrInjected) {
-        await taskRepository.clearTasks();
+        await taskStore.clearTasks();
       }
       
       // Reset to default tasks
@@ -1000,6 +1071,13 @@ function App({ initialTasks, __test_onDragEnd }) {
             pushToast({ message: 'Browser notifications permission denied', tone: 'error' });
           }
         }}
+      />
+      <ImportConfirmDialog
+        isOpen={importConfirmOpen}
+        incomingCount={pendingImportedTasks?.length || 0}
+        onReplace={handleImportReplace}
+        onMerge={handleImportMerge}
+        onCancel={handleImportCancel}
       />
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
       <PageDots active={view} onSelect={setView} />

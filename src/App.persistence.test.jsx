@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
 import { STORAGE_KEY } from './utils/storage.js';
-import { saveTasks, clearTasks } from './data/LocalTaskRepository.js';
+import { saveTasks, clearTasks } from './data/storage/TaskStore.js';
 
 describe('App Persistence', () => {
   beforeEach(() => {
@@ -159,7 +159,7 @@ describe('App Persistence', () => {
 
     // Assert: app should not crash and should load demo tasks
     await waitFor(() => {
-      // Demo tasks should be visible (repository returns null on parse error, app falls back to defaults)
+      // Demo tasks should be visible (TaskStore returns empty on parse error, app falls back to defaults)
       expect(screen.getByRole('button', { name: /add new task/i })).toBeInTheDocument();
     }, { timeout: 2000 });
 
@@ -169,6 +169,69 @@ describe('App Persistence', () => {
       // Default tasks should include at least one task
       expect(q1Dropzone.textContent).toBeTruthy();
     }, { timeout: 2000 });
+  });
+
+  it('should persist created task and reload it after unmount/remount', async () => {
+    const user = userEvent.setup();
+
+    // Arrange: clear localStorage
+    clearTasks();
+
+    // Act 1: render App and create a task
+    const { unmount } = render(<App />);
+    
+    // Wait for async loading to complete
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add new task/i })).toBeInTheDocument();
+    }, { timeout: 2000 });
+
+    // Create a task
+    const fabButton = screen.getByRole('button', { name: /add new task/i });
+    await user.click(fabButton);
+
+    const titleInput = screen.getByLabelText(/title/i);
+    await user.type(titleInput, 'Persistent Task');
+
+    const submitButton = screen.getByRole('button', { name: /create task/i });
+    await user.click(submitButton);
+
+    // Wait for assignment overlay
+    await waitFor(() => {
+      expect(screen.queryByTestId('assignment-overlay')).toBeInTheDocument();
+    });
+
+    // Wait for auto-placement to complete (10 seconds)
+    await waitFor(() => {
+      expect(screen.queryByTestId('assignment-overlay')).not.toBeInTheDocument();
+    }, { timeout: 12000 });
+
+    // Wait for debounced save (250ms) plus a buffer
+    await waitFor(() => {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      expect(stored).toBeTruthy();
+      const parsed = JSON.parse(stored);
+      const tasks = parsed.version === 1 ? parsed.tasks : parsed;
+      const hasNewTask = tasks.some(task => task.title === 'Persistent Task');
+      expect(hasNewTask).toBe(true);
+    }, { timeout: 10000 });
+
+    // Unmount App
+    unmount();
+
+    // Act 2: remount App
+    render(<App />);
+
+    // Assert: task should be reloaded and visible
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add new task/i })).toBeInTheDocument();
+    }, { timeout: 2000 });
+
+    await waitFor(() => {
+      // Task should be visible in the correct quadrant (it was auto-placed based on flags)
+      const dropzones = screen.getAllByTestId(/^dropzone-/);
+      const hasPersistentTask = dropzones.some(dz => dz.textContent.includes('Persistent Task'));
+      expect(hasPersistentTask).toBe(true);
+    }, { timeout: 5000 });
   });
 });
 
