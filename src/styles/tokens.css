@@ -62,6 +62,11 @@
   /* Empty State Icon */
   --color-icon-empty: rgba(255, 255, 255, 0.3);
   
+  /* Deadline Urgency Colors - Used for task indicators based on due date */
+  --urgency-red: #FF3B30;
+  --urgency-yellow: #FF9F0A;
+  --urgency-green: #34C759;
+  
   /* Overlay Colors - Glassmorphism effects */
   --color-overlay-base: rgba(255, 255, 255, 0.08);
   --color-overlay-hover: rgba(255, 255, 255, 0.12);

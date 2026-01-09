@@ -1,14 +1,21 @@
 /**
  * Storage utilities for persisting tasks to localStorage
+ * 
+ * Storage format:
+ * - Version 1: { version: 1, tasks: [...] }
+ * - Version 0 (legacy): [...] (array of tasks, no version wrapper)
  */
 
 export const STORAGE_KEY = "eisenhower.tasks.v1";
+export const CURRENT_SCHEMA_VERSION = 1;
 
 /**
- * Loads tasks from localStorage
- * @returns {Array|null} Array of tasks if valid, null otherwise
+ * Loads raw data from localStorage (may be old array format or new versioned format)
+ * @returns {Object|null} Versioned schema object if valid, null otherwise
+ * @returns {Object.version} Schema version (0 for legacy array, 1 for versioned)
+ * @returns {Object.tasks} Array of tasks (or raw array for version 0)
  */
-export function loadTasks() {
+export function loadRawStorage() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) {
@@ -17,29 +24,23 @@ export function loadTasks() {
     
     const parsed = JSON.parse(stored);
     
-    // Validate it's an array
-    if (!Array.isArray(parsed)) {
+    // Check if it's the new versioned format
+    if (parsed && typeof parsed === 'object' && 'version' in parsed && 'tasks' in parsed) {
+      // Version 1 format
+      if (parsed.version === 1 && Array.isArray(parsed.tasks)) {
+        return { version: 1, tasks: parsed.tasks };
+      }
+      // Unknown version - treat as corrupted
       return null;
     }
     
-    // Validate each item has at least id, title/name, urgent, important
-    // Be permissive - just check for basic structure
-    const isValid = parsed.every(task => {
-      return (
-        task &&
-        typeof task === 'object' &&
-        (task.id !== undefined) &&
-        (task.title !== undefined || task.name !== undefined) &&
-        (task.urgent !== undefined || typeof task.urgent === 'boolean') &&
-        (task.important !== undefined || typeof task.important === 'boolean')
-      );
-    });
-    
-    if (!isValid) {
-      return null;
+    // Check if it's the old array format (version 0)
+    if (Array.isArray(parsed)) {
+      return { version: 0, tasks: parsed };
     }
     
-    return parsed;
+    // Invalid format
+    return null;
   } catch (error) {
     // If JSON.parse fails or any other error, return null
     return null;
@@ -47,16 +48,33 @@ export function loadTasks() {
 }
 
 /**
- * Saves tasks to localStorage
+ * Saves tasks to localStorage in versioned format
  * @param {Array} tasks - Array of task objects to save
  */
 export function saveTasks(tasks) {
   try {
-    const json = JSON.stringify(tasks);
+    if (!Array.isArray(tasks)) {
+      console.error('saveTasks: tasks must be an array');
+      return;
+    }
+    
+    // Guard against extremely large arrays (e.g., > 10000 tasks)
+    if (tasks.length > 10000) {
+      console.error('saveTasks: tasks array too large, refusing to save');
+      return;
+    }
+    
+    const versioned = {
+      version: CURRENT_SCHEMA_VERSION,
+      tasks: tasks
+    };
+    
+    const json = JSON.stringify(versioned);
     localStorage.setItem(STORAGE_KEY, json);
   } catch (error) {
     // Silently fail if localStorage is unavailable or quota exceeded
     // In production, might want to log this
+    console.error('Failed to save tasks to localStorage:', error);
   }
 }
 

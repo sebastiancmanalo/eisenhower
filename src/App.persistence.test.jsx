@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { STORAGE_KEY, saveTasks, clearTasks } from './utils/storage.js';
+import { STORAGE_KEY } from './utils/storage.js';
+import { saveTasks, clearTasks } from './data/LocalTaskRepository.js';
 
 describe('App Persistence', () => {
   beforeEach(() => {
@@ -15,22 +16,24 @@ describe('App Persistence', () => {
     clearTasks();
   });
 
-  it('should load tasks from localStorage when initialTasks is not provided', () => {
-    // Arrange: set localStorage key to JSON of tasks
+  it('should load tasks from localStorage when initialTasks is not provided', async () => {
+    // Arrange: set localStorage key to JSON of tasks (using repository)
     const storedTasks = [
-      { id: '1', title: 'Stored Task 1', urgent: true, important: true },
-      { id: '2', title: 'Stored Task 2', urgent: false, important: true }
+      { id: '1', title: 'Stored Task 1', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' },
+      { id: '2', title: 'Stored Task 2', urgent: false, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'medium' }
     ];
-    saveTasks(storedTasks);
+    await saveTasks(storedTasks);
 
     // Act: render App without initialTasks
     render(<App />);
 
-    // Assert: tasks appear in correct quadrants
-    const q1Dropzone = screen.getByTestId('dropzone-Q1');
-    const q2Dropzone = screen.getByTestId('dropzone-Q2');
+    // Assert: tasks appear in correct quadrants (wait for async load)
+    await waitFor(() => {
+      const q1Dropzone = screen.getByTestId('dropzone-Q1');
+      expect(q1Dropzone).toHaveTextContent('Stored Task 1');
+    });
     
-    expect(q1Dropzone).toHaveTextContent('Stored Task 1');
+    const q2Dropzone = screen.getByTestId('dropzone-Q2');
     expect(q2Dropzone).toHaveTextContent('Stored Task 2');
   });
 
@@ -39,6 +42,11 @@ describe('App Persistence', () => {
 
     // Arrange: render App without initialTasks
     render(<App />);
+    
+    // Wait for async loading to complete
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /add new task/i })).toBeInTheDocument();
+    }, { timeout: 2000 });
 
     // Act: create a task through the UI
     const fabButton = screen.getByRole('button', { name: /add new task/i });
@@ -60,23 +68,30 @@ describe('App Persistence', () => {
       expect(screen.queryByTestId('assignment-overlay')).toBeInTheDocument();
     });
 
-    // Close the assignment overlay by waiting for auto-place or manually
+    // Wait for auto-placement to complete
+    await waitFor(() => {
+      expect(screen.queryByTestId('assignment-overlay')).not.toBeInTheDocument();
+    }, { timeout: 12000 });
+
+    // Wait for debounced save (200ms) plus a buffer
     await waitFor(() => {
       const stored = localStorage.getItem(STORAGE_KEY);
       expect(stored).toBeTruthy();
       const parsed = JSON.parse(stored);
-      expect(parsed).toBeInstanceOf(Array);
-      const hasNewTask = parsed.some(task => task.title === 'New Persisted Task');
+      // Handle versioned format
+      const tasks = parsed.version === 1 ? parsed.tasks : parsed;
+      expect(Array.isArray(tasks)).toBe(true);
+      const hasNewTask = tasks.some(task => task.title === 'New Persisted Task');
       expect(hasNewTask).toBe(true);
-    }, { timeout: 15000 });
+    }, { timeout: 10000 });
   });
 
-  it('should use initialTasks and not load from localStorage when initialTasks is provided', () => {
+  it('should use initialTasks and not load from localStorage when initialTasks is provided', async () => {
     // Arrange: put tasks in localStorage
     const storedTasks = [
-      { id: 'stored-1', title: 'Stored Task', urgent: true, important: true }
+      { id: 'stored-1', title: 'Stored Task', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' }
     ];
-    saveTasks(storedTasks);
+    await saveTasks(storedTasks);
 
     // Arrange: different tasks via initialTasks prop
     const injectedTasks = [
@@ -103,7 +118,7 @@ describe('App Persistence', () => {
     // Arrange: clear localStorage and render with initialTasks
     clearTasks();
     const initialTasks = [
-      { id: 'test-1', title: 'Test Task', urgent: true, important: true }
+      { id: 'test-1', title: 'Test Task', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' }
     ];
     render(<App initialTasks={initialTasks} />);
 
@@ -117,15 +132,42 @@ describe('App Persistence', () => {
     const submitButton = screen.getByRole('button', { name: /create task/i });
     await user.click(submitButton);
 
-    // Wait a bit for any persistence to occur
+    // Wait for auto-placement
     await waitFor(() => {
-      // Assert: localStorage should not contain the new task
+      expect(screen.queryByTestId('assignment-overlay')).not.toBeInTheDocument();
+    }, { timeout: 12000 });
+
+    // Wait for debounce period plus buffer, then check
+    await waitFor(() => {
+      // Assert: localStorage should not contain the new task (test mode, no persistence)
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        const hasNewTask = parsed.some(task => task.title === 'Should Not Persist');
+        const tasks = parsed.version === 1 ? parsed.tasks : parsed;
+        const hasNewTask = tasks.some(task => task.title === 'Should Not Persist');
         expect(hasNewTask).toBe(false);
       }
+    }, { timeout: 10000 });
+  });
+
+  it('should handle corrupted localStorage and load demo tasks without crashing', async () => {
+    // Arrange: set localStorage to invalid JSON
+    localStorage.setItem(STORAGE_KEY, 'invalid json{broken');
+
+    // Act: render App without initialTasks
+    render(<App />);
+
+    // Assert: app should not crash and should load demo tasks
+    await waitFor(() => {
+      // Demo tasks should be visible (repository returns null on parse error, app falls back to defaults)
+      expect(screen.getByRole('button', { name: /add new task/i })).toBeInTheDocument();
+    }, { timeout: 2000 });
+
+    // Verify demo tasks are present (at least one default task should be visible)
+    await waitFor(() => {
+      const q1Dropzone = screen.getByTestId('dropzone-Q1');
+      // Default tasks should include at least one task
+      expect(q1Dropzone.textContent).toBeTruthy();
     }, { timeout: 2000 });
   });
 });

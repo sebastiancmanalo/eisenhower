@@ -214,10 +214,11 @@ describe('Task Details Modal', () => {
     const user = userEvent.setup();
     
     // Set tasks in localStorage BEFORE rendering to simulate existing data
+    // Use versioned format
     const tasksWithStorage = [
       { id: '1', title: 'Persistent Task', urgent: true, important: true }
     ];
-    localStorage.setItem('eisenhower.tasks.v1', JSON.stringify(tasksWithStorage));
+    localStorage.setItem('eisenhower.tasks.v1', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
 
     // Render without initialTasks to test localStorage loading
     render(<App />);
@@ -256,10 +257,147 @@ describe('Task Details Modal', () => {
     await waitFor(() => {
       const stored = JSON.parse(localStorage.getItem('eisenhower.tasks.v1'));
       expect(stored).toBeDefined();
-      const task = stored.find(t => t.id === '1');
+      const tasks = stored.version === 1 ? stored.tasks : stored; // Handle both formats
+      const task = tasks.find(t => String(t.id) === '1');
       expect(task).toBeDefined();
       expect(task.title).toBe('Updated Persistent Task');
     });
+  });
+
+  it('should edit dueDate and notificationFrequency in modal', async () => {
+    const user = userEvent.setup();
+    const testTasks = [
+      { 
+        id: '1', 
+        title: 'Task to Edit', 
+        urgent: true, 
+        important: true,
+        dueDate: null,
+        notificationFrequency: 'high'
+      }
+    ];
+
+    render(<App initialTasks={testTasks} />);
+
+    // Open modal
+    const taskBubble = screen.getByText('Task to Edit').closest('.task-bubble');
+    fireEvent.click(taskBubble);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+    });
+
+    // Click Edit button
+    const editButton = screen.getByTestId('edit-button');
+    await user.click(editButton);
+
+    // Change dueDate and notificationFrequency
+    const dueDateInput = screen.getByTestId('edit-due-date-input');
+    await user.clear(dueDateInput);
+    await user.type(dueDateInput, '2026-12-25');
+
+    const mediumButton = screen.getByTestId('edit-frequency-medium-button');
+    await user.click(mediumButton);
+
+    // Save
+    const saveButton = screen.getByTestId('save-button');
+    await user.click(saveButton);
+
+    // Verify modal shows updated values
+    await waitFor(() => {
+      expect(screen.queryByTestId('edit-button')).toBeInTheDocument();
+    });
+
+    // Check that dueDate and frequency are displayed
+    expect(screen.getByText(/due date/i)).toBeInTheDocument();
+    expect(screen.getByText(/reminder frequency/i)).toBeInTheDocument();
+    expect(screen.getByText(/medium/i)).toBeInTheDocument();
+
+    // Close modal and reopen to verify persistence
+    const backdrop = document.querySelector('.task-details-modal__backdrop');
+    await user.click(backdrop);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('task-modal')).not.toBeInTheDocument();
+    });
+
+    // Reopen modal
+    const taskBubble2 = screen.getByText('Task to Edit').closest('.task-bubble');
+    fireEvent.click(taskBubble2);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+    });
+
+    // Verify values persisted
+    expect(screen.getByText(/due date/i)).toBeInTheDocument();
+    expect(screen.getByText(/reminder frequency/i)).toBeInTheDocument();
+    expect(screen.getByText(/medium/i)).toBeInTheDocument();
+  });
+
+  it('should persist dueDate and notificationFrequency after repository reload', async () => {
+    const user = userEvent.setup();
+    
+    // Set tasks in localStorage BEFORE rendering to simulate existing data
+    // Use versioned format
+    const tasksWithStorage = [
+      { 
+        id: '1', 
+        title: 'Persistent Task', 
+        urgent: true, 
+        important: true,
+        dueDate: null,
+        notificationFrequency: 'high'
+      }
+    ];
+    localStorage.setItem('eisenhower.tasks.v1', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
+
+    // Render without initialTasks to test localStorage loading
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Persistent Task')).toBeInTheDocument();
+    });
+    
+    const taskBubble = screen.getByText('Persistent Task').closest('.task-bubble');
+    fireEvent.click(taskBubble);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-modal')).toBeInTheDocument();
+    });
+
+    const editButton = screen.getByTestId('edit-button');
+    await user.click(editButton);
+
+    // Edit dueDate and notificationFrequency
+    const dueDateInput = screen.getByTestId('edit-due-date-input');
+    await user.type(dueDateInput, '2026-12-25');
+
+    const lowButton = screen.getByTestId('edit-frequency-low-button');
+    await user.click(lowButton);
+
+    const saveButton = screen.getByTestId('save-button');
+    await user.click(saveButton);
+
+    // Close modal
+    const backdrop = document.querySelector('.task-details-modal__backdrop');
+    await user.click(backdrop);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('task-modal')).not.toBeInTheDocument();
+    });
+
+    // Wait for debounced save
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('eisenhower.tasks.v1'));
+      expect(stored).toBeDefined();
+      const tasks = stored.version === 1 ? stored.tasks : stored; // Handle both formats
+      const task = tasks.find(t => String(t.id) === '1');
+      expect(task).toBeDefined();
+      expect(task.notificationFrequency).toBe('low');
+      // dueDate should be stored as ISO string (end of day)
+      expect(task.dueDate).toContain('2026-12-25');
+    }, { timeout: 1000 });
   });
 });
 

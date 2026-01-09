@@ -87,13 +87,14 @@ describe('App Integration Tests', () => {
     expect(q4Props.tasks[0].title).toBe('D');
   });
 
-  it('should use default tasks when initialTasks prop is not provided', () => {
+  it('should use default tasks when initialTasks prop is not provided', async () => {
     render(<App />);
     
-    const totalTasks = capturedProps.reduce((sum, props) => sum + props.tasks.length, 0);
-    
-    // Default tasks should be present (at least 2 tasks)
-    expect(totalTasks).toBeGreaterThanOrEqual(2);
+    // Wait for async loading to complete
+    await waitFor(() => {
+      const totalTasks = capturedProps.reduce((sum, props) => sum + props.tasks.length, 0);
+      expect(totalTasks).toBeGreaterThanOrEqual(2);
+    }, { timeout: 2000 });
   });
 
   it('should handle empty tasks array', () => {

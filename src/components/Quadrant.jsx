@@ -1,6 +1,7 @@
 import React from 'react';
 import TaskBubble from './TaskBubble.jsx';
 import DraggableTask from './DraggableTask.jsx';
+import { getDeadlineUrgency } from '../utils/deadlineUrgency.js';
 import './Quadrant.css';
 
 const urgencyColors = {
@@ -49,14 +50,15 @@ function Quadrant({ title, subtitle, backgroundColor, tasks, onTaskClick, onTask
       ) : (
         <div className="quadrant-tasks">
           {tasks.map((task, index) => {
-            // Map urgent/important to urgency color for display
-            const getUrgencyFromTask = (task) => {
+            // Use deadline urgency if dueDate exists, otherwise fall back to quadrant-based urgency
+            const deadlineUrgency = getDeadlineUrgency(task.dueDate);
+            const getQuadrantUrgency = (task) => {
               if (task.urgent && task.important) return 'red';
               if (task.important && !task.urgent) return 'yellow';
               if (task.urgent && !task.important) return 'yellow';
               return 'green';
             };
-            const urgency = getUrgencyFromTask(task);
+            const urgency = deadlineUrgency !== null ? deadlineUrgency : getQuadrantUrgency(task);
             const urgencyColor = urgencyColors[urgency];
             // Format estimateMinutesTotal: "Xh Ym" if >= 60, "Nm" if < 60
             const formatTime = (estimateMinutesTotal) => {

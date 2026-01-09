@@ -36,19 +36,45 @@ function TaskBubble({
   const priority = urgency ? getPriorityFromUrgency(urgency) : 'low';
   const priorityColorClass = getPriorityColor(priority);
 
-  // Convert hex color to rgba for subtle glow
-  const getGlowRgb = (color) => {
-    if (!color) return null;
+  // Map urgency label to CSS variable color
+  const getUrgencyColorVar = (urgencyLabel) => {
+    if (!urgencyLabel) return null;
     const colorMap = {
-      '#FF3B30': '255, 59, 48',
-      '#FF9F0A': '255, 159, 10',
-      '#34C759': '52, 199, 89',
-      '#007AFF': '0, 122, 255'
+      'red': 'var(--urgency-red)',
+      'yellow': 'var(--urgency-yellow)',
+      'green': 'var(--urgency-green)'
     };
-    return colorMap[color] || null;
+    return colorMap[urgencyLabel] || null;
   };
 
-  const glowRgb = urgencyColor ? getGlowRgb(urgencyColor) : null;
+  // Get RGB values for glow effect
+  // Maps urgency labels and hex colors to RGB strings
+  const getGlowRgb = (urgencyLabel, color) => {
+    // If urgency label is provided, use it for RGB mapping
+    if (urgencyLabel) {
+      const rgbMap = {
+        'red': '255, 59, 48',
+        'yellow': '255, 159, 10',
+        'green': '52, 199, 89'
+      };
+      return rgbMap[urgencyLabel] || null;
+    }
+    // Fallback to hex color mapping
+    if (color) {
+      const colorMap = {
+        '#FF3B30': '255, 59, 48',
+        '#FF9F0A': '255, 159, 10',
+        '#34C759': '52, 199, 89',
+        '#007AFF': '0, 122, 255'
+      };
+      return colorMap[color] || null;
+    }
+    return null;
+  };
+
+  // Determine indicator color: use CSS variable if urgency exists, else fallback to urgencyColor
+  const indicatorColor = urgency ? getUrgencyColorVar(urgency) : urgencyColor;
+  const glowRgb = getGlowRgb(urgency, urgencyColor);
   
   // Don't apply dragging styles if ghost is hidden (to prevent faint duplicate)
   const shouldShowDragging = isDragging && !isGhostHidden;
@@ -76,10 +102,11 @@ function TaskBubble({
       aria-label={`Task: ${taskName}`}
       style={bubbleStyle}
     >
-      {urgencyColor && (
+      {indicatorColor && (
         <div 
           className={`task-bubble__priority-dot ${priorityColorClass}`}
-          style={{ backgroundColor: urgencyColor }}
+          style={{ backgroundColor: indicatorColor }}
+          data-testid="task-urgency-indicator"
         />
       )}
       <div className="task-bubble__content">

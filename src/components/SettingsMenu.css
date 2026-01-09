@@ -1,0 +1,245 @@
+.settings-menu {
+  position: relative;
+  z-index: 1000;
+}
+
+.settings-menu__button {
+  position: fixed;
+  top: var(--space-md);
+  right: var(--space-md);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: var(--color-bg-task);
+  border: 2px solid var(--color-overlay-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.1s ease;
+  box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1001;
+}
+
+/* Respect iOS safe area for button position */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .settings-menu__button {
+    top: calc(var(--space-md) + env(safe-area-inset-top));
+    right: calc(var(--space-md) + env(safe-area-inset-right));
+  }
+}
+
+.settings-menu__button:hover {
+  background-color: var(--color-overlay-hover);
+  transform: scale(1.05);
+}
+
+.settings-menu__button:active {
+  transform: scale(0.95);
+}
+
+.settings-menu__icon {
+  font-size: 24px;
+  line-height: 1;
+  color: var(--color-text-primary);
+  user-select: none;
+}
+
+/* Full-screen overlay container - NO opacity here */
+.settings-menu__overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  padding: calc(12px + env(safe-area-inset-top, 0px))
+           calc(12px + env(safe-area-inset-right, 0px))
+           calc(12px + env(safe-area-inset-bottom, 0px))
+           calc(12px + env(safe-area-inset-left, 0px));
+  pointer-events: none;
+  /* Ensure no opacity inheritance */
+  opacity: 1;
+}
+
+/* Backdrop layer - dims the page */
+.settings-menu__backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+/* Menu panel - nearly opaque premium glass surface */
+.settings-menu__dropdown {
+  position: fixed;
+  background: rgba(24, 24, 28, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  min-width: 280px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 10000;
+  /* Ensure no opacity inheritance */
+  opacity: 1;
+}
+
+.settings-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 52px;
+  min-height: 48px;
+  padding: 0 18px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.settings-menu__item:last-child {
+  border-bottom: none;
+}
+
+.settings-menu__item:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.settings-menu__item--danger {
+  color: #FF3B30;
+}
+
+.settings-menu__item--danger:hover {
+  background-color: rgba(255, 59, 48, 0.15);
+}
+
+.settings-menu__divider {
+  height: 1px;
+  background-color: rgba(255, 255, 255, 0.08);
+  margin: 0;
+}
+
+.settings-menu__notification-settings {
+  padding: var(--space-md);
+  background-color: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-menu__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.settings-menu__toggle input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.settings-menu__quiet-hours {
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.settings-menu__quiet-hours > label {
+  display: block;
+  margin-bottom: var(--space-sm);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.settings-menu__time-inputs {
+  display: flex;
+  gap: var(--space-md);
+}
+
+.settings-menu__time-inputs > div {
+  flex: 1;
+}
+
+.settings-menu__time-inputs label {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font-size: var(--font-size-xs);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.settings-menu__time-inputs input[type="time"] {
+  width: 100%;
+  padding: var(--space-xs);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--radius-sm);
+  background-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+}
+
+.settings-menu__section {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-menu__section-title {
+  padding: 0 18px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: rgba(255, 255, 255, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-menu__account-info {
+  padding: 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0;
+}
+
+.settings-menu__account-label {
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.settings-menu__account-value {
+  font-family: var(--font-family);
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.settings-menu__account-note {
+  padding: 0 18px;
+  margin: var(--space-xs) 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-xs);
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+}
+

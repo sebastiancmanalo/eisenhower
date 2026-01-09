@@ -10,34 +10,85 @@ import TaskDetailsModal from './components/TaskDetailsModal.jsx';
 import RightNowView from './components/RightNowView.jsx';
 import PageDots from './components/PageDots.jsx';
 import ToastHost from './components/ToastHost.jsx';
+import SettingsMenu from './components/SettingsMenu.jsx';
 import { getQuadrant } from './utils/taskLogic.js';
-import { loadTasks, saveTasks } from './utils/storage.js';
+import { getDeadlineUrgency } from './utils/deadlineUrgency.js';
+import { normalizeTask } from './utils/normalizeTask.js';
+import { getTaskRepository } from './data/index.js';
+import { useAuth } from './auth/AuthProvider.jsx';
+import { updateTaskSyncFields } from './utils/updateTaskSyncFields.js';
+import { exportTasks, parseImportFile, mergeTasksById } from './utils/exportImport.js';
+import { loadPreferences, savePreferences } from './notifications/notificationPreferences.js';
+import { scheduleNext } from './notifications/NotificationScheduler.js';
+import { show as showInAppNotification } from './notifications/InAppNotifier.js';
+import { show as showBrowserNotification, requestPermission as requestBrowserPermission, getPermissionStatus } from './notifications/BrowserNotifier.js';
+import { shouldDriftToQ1 } from './notifications/notificationRules.js';
 import './styles/tokens.css';
 import './styles/global.css';
 import './App.css';
 
 function App({ initialTasks, __test_onDragEnd }) {
+  const auth = useAuth();
   const defaultTasks = [
-    { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m" },
-    { id: 2, title: "Email stakeholder", urgent: false, important: true }
+    { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m", createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' },
+    { id: 2, title: "Email stakeholder", urgent: false, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'medium' }
   ];
   
-  // Determine initial tasks: use initialTasks if provided, else try localStorage, else default
-  const getInitialTasks = () => {
+  // Get repository based on auth context
+  const taskRepository = getTaskRepository(auth);
+  
+  const [tasks, setTasks] = useState(() => {
+    // If initialTasks provided (test mode), use them directly
     if (initialTasks != null) {
       return initialTasks;
     }
-    const stored = loadTasks();
-    if (stored != null) {
-      return stored;
-    }
-    return defaultTasks;
-  };
+    // Otherwise start with empty array, will load async
+    return [];
+  });
   
-  const [tasks, setTasks] = useState(getInitialTasks);
+  // Track if we've loaded tasks from repository
+  const [hasLoadedTasks, setHasLoadedTasks] = useState(false);
   
   // Helper to check if we should persist (not in test mode)
   const isTestOrInjected = initialTasks != null;
+  
+  // Load tasks from repository on mount or when auth state changes (unless in test mode)
+  const loadTasksFromRepository = async () => {
+    try {
+      const loaded = await taskRepository.loadTasks();
+      if (loaded && loaded.length > 0) {
+        setTasks(loaded);
+      } else {
+        // No tasks in storage, use defaults
+        setTasks(defaultTasks);
+      }
+      setHasLoadedTasks(true);
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+      setTasks(defaultTasks);
+      setHasLoadedTasks(true);
+    }
+  };
+  
+  useEffect(() => {
+    if (isTestOrInjected) {
+      setHasLoadedTasks(true);
+      return;
+    }
+    
+    let cancelled = false;
+    
+    const loadInitialTasks = async () => {
+      await loadTasksFromRepository();
+      if (cancelled) return;
+    };
+    
+    loadInitialTasks();
+    
+    return () => {
+      cancelled = true;
+    };
+  }, [isTestOrInjected, auth.status]);
   
   // Configure drag sensor with activation constraint (requires 8px movement before drag starts)
   const sensors = useSensors(
@@ -58,6 +109,28 @@ function App({ initialTasks, __test_onDragEnd }) {
   const [view, setView] = useState('matrix'); // 'matrix' | 'rightNow'
   const toastTimeoutsRef = useRef(new Map());
   const pendingAssignmentSnapshotRef = useRef(null);
+  
+  // Notification system state
+  const [notificationPreferences, setNotificationPreferences] = useState(() => loadPreferences());
+  const [firedNotifications, setFiredNotifications] = useState(() => {
+    try {
+      const stored = localStorage.getItem('eisenhower.firedNotifications.v1');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Keep only last 500 entries
+        const entries = Object.entries(parsed);
+        if (entries.length > 500) {
+          const sorted = entries.sort((a, b) => new Date(b[1]) - new Date(a[1]));
+          return Object.fromEntries(sorted.slice(0, 500));
+        }
+        return parsed;
+      }
+      return {};
+    } catch (error) {
+      console.error('Failed to load fired notifications:', error);
+      return {};
+    }
+  });
 
   const pushToast = ({ message, tone = "neutral", durationMs = 3000, key = null, meta = {}, onUndo = null }) => {
     if (key === "move") {
@@ -242,13 +315,13 @@ function App({ initialTasks, __test_onDragEnd }) {
             // Only show toast if quadrant actually changed
             if (previousQuadrant && previousQuadrant !== currentQuadrant) {
               const undoHandler = () => {
-                setTasks(prevTasks =>
-                  prevTasks.map(task =>
-                    task.id === previousSnapshot.id
-                      ? { ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important }
-                      : task
-                  )
-                );
+              setTasks(prevTasks =>
+                prevTasks.map(task =>
+                  task.id === previousSnapshot.id
+                    ? updateTaskSyncFields({ ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important })
+                    : task
+                )
+              );
               };
               
               pushToast({ 
@@ -277,12 +350,44 @@ function App({ initialTasks, __test_onDragEnd }) {
     };
   }, []);
 
-  // Persist tasks to localStorage when they change (unless in test mode)
-  useEffect(() => {
+  // Handle auth state changes - reload tasks when auth changes
+  const handleAuthStateChange = () => {
     if (!isTestOrInjected) {
-      saveTasks(tasks);
+      loadTasksFromRepository();
     }
-  }, [tasks, isTestOrInjected]);
+  };
+
+  // Debounced save to repository when tasks change (unless in test mode or not yet loaded)
+  const saveDebounceRef = useRef(null);
+  
+  useEffect(() => {
+    // Don't save if in test mode or not loaded yet
+    // Note: We allow saving empty arrays after load completes (user deleted all tasks)
+    if (isTestOrInjected || !hasLoadedTasks) {
+      return;
+    }
+    
+    // Clear existing timeout
+    if (saveDebounceRef.current) {
+      clearTimeout(saveDebounceRef.current);
+    }
+    
+    // Set new timeout for debounced save (200ms debounce)
+    saveDebounceRef.current = setTimeout(async () => {
+      try {
+        await taskRepository.saveTasks(tasks);
+      } catch (error) {
+        console.error('Failed to save tasks:', error);
+      }
+    }, 200);
+    
+    // Cleanup timeout on unmount or when tasks change before timeout
+    return () => {
+      if (saveDebounceRef.current) {
+        clearTimeout(saveDebounceRef.current);
+      }
+    };
+  }, [tasks, isTestOrInjected, hasLoadedTasks]);
 
   // Arrow key navigation for view switching
   useEffect(() => {
@@ -316,6 +421,100 @@ function App({ initialTasks, __test_onDragEnd }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Notification system tick - runs every 60 seconds and on visibility change
+  useEffect(() => {
+    if (isTestOrInjected) {
+      return; // Skip in test mode
+    }
+
+    const runNotificationTick = () => {
+      const now = new Date();
+      const activeTasks = tasks.filter(task => !task.completedAt && !task.deletedAt);
+      
+      // Get planned notifications
+      const planned = scheduleNext(activeTasks, notificationPreferences, now, firedNotifications);
+      
+      // Process each planned notification
+      for (const notification of planned) {
+        const fireAt = new Date(notification.fireAtISO);
+        const nowTime = now.getTime();
+        const fireTime = fireAt.getTime();
+        
+        // Check if notification should fire (within 1 minute tolerance)
+        if (fireTime <= nowTime + 60000) {
+          // Check if already fired
+          if (firedNotifications[notification.id]) {
+            continue;
+          }
+          
+          // Mark as fired
+          setFiredNotifications(prev => {
+            const next = { ...prev, [notification.id]: now.toISOString() };
+            
+            // Persist to localStorage (keep last 500)
+            try {
+              const entries = Object.entries(next);
+              const toStore = entries.length > 500
+                ? Object.fromEntries(
+                    entries.sort((a, b) => new Date(b[1]) - new Date(a[1])).slice(0, 500)
+                  )
+                : next;
+              localStorage.setItem('eisenhower.firedNotifications.v1', JSON.stringify(toStore));
+            } catch (error) {
+              console.error('Failed to save fired notifications:', error);
+            }
+            
+            return next;
+          });
+          
+          // Handle drift notifications
+          if (notification.type === 'drift') {
+            const task = activeTasks.find(t => t.id === notification.taskId);
+            if (task && shouldDriftToQ1(task, now)) {
+              // Auto-move task to Q1
+              setTasks(prevTasks =>
+                prevTasks.map(t =>
+                  t.id === task.id
+                    ? updateTaskSyncFields({ ...t, urgent: true, important: true })
+                    : t
+                )
+              );
+            }
+          }
+          
+          // Show in-app notification if enabled
+          if (notificationPreferences.inAppReminders) {
+            showInAppNotification(notification, pushToast);
+          }
+          
+          // Show browser notification if enabled and permission granted
+          if (notificationPreferences.browserNotifications && getPermissionStatus() === 'granted') {
+            showBrowserNotification(notification);
+          }
+        }
+      }
+    };
+
+    // Run immediately on mount
+    runNotificationTick();
+
+    // Set up interval (60 seconds)
+    const intervalId = setInterval(runNotificationTick, 60000);
+
+    // Run on visibility change (when tab becomes visible)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        runNotificationTick();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [tasks, notificationPreferences, firedNotifications, isTestOrInjected, pushToast]);
+
   const handleTaskClick = (task) => {
     setSelectedTaskId(task.id);
     setStartModalInEditMode(false);
@@ -335,7 +534,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     setTasks(prevTasks =>
       prevTasks.map(task =>
         task.id === taskId
-          ? { ...task, ...updatedFields }
+          ? updateTaskSyncFields({ ...task, ...updatedFields })
           : task
       )
     );
@@ -343,16 +542,24 @@ function App({ initialTasks, __test_onDragEnd }) {
   };
 
   const handleDeleteTask = (taskId) => {
-    setTasks(prevTasks => prevTasks.filter(task => task.id !== taskId));
+    const now = new Date().toISOString();
+    setTasks(prevTasks =>
+      prevTasks.map(task =>
+        task.id === taskId
+          ? updateTaskSyncFields({ ...task, deletedAt: now })
+          : task
+      )
+    );
     setSelectedTaskId(null);
     pushToast({ message: "Deleted task", tone: "neutral" });
   };
 
   const handleCompleteTask = (taskId) => {
+    const now = new Date().toISOString();
     setTasks(prevTasks =>
       prevTasks.map(task =>
         task.id === taskId
-          ? { ...task, completedAt: Date.now() }
+          ? updateTaskSyncFields({ ...task, completedAt: now })
           : task
       )
     );
@@ -361,21 +568,126 @@ function App({ initialTasks, __test_onDragEnd }) {
     pushToast({ message: `Completed: ${task?.title || 'task'}`, tone: "success" });
   };
 
+  const handleExportTasks = () => {
+    try {
+      exportTasks(tasks);
+      pushToast({ message: `Exported ${tasks.length} task${tasks.length !== 1 ? 's' : ''}`, tone: "success" });
+    } catch (error) {
+      console.error('Export failed:', error);
+      pushToast({ message: 'Failed to export tasks', tone: "error" });
+    }
+  };
+
+  const handleImportTasks = async (file) => {
+    try {
+      const text = await file.text();
+      const parsed = parseImportFile(text);
+      
+      // Parse will return { version, tasks }
+      // We can handle version 0 (array) or version 1 (versioned) format
+      let importedTasks = parsed.tasks;
+      
+      if (!Array.isArray(importedTasks) || importedTasks.length === 0) {
+        pushToast({ message: 'No valid tasks found in file', tone: "error" });
+        return;
+      }
+
+      // Guard against extremely large imports
+      if (importedTasks.length > 10000) {
+        pushToast({ message: 'File contains too many tasks (max 10,000)', tone: "error" });
+        return;
+      }
+
+      // Normalize each imported task
+      const normalizedImported = importedTasks.map(task => {
+        try {
+          return normalizeTask(task);
+        } catch (error) {
+          console.error('Skipping invalid task during import:', error, task);
+          return null;
+        }
+      }).filter(Boolean);
+
+      if (normalizedImported.length === 0) {
+        pushToast({ message: 'No valid tasks found in file', tone: "error" });
+        return;
+      }
+
+      // Merge with existing tasks by id
+      const mergedTasks = mergeTasksById(tasks, normalizedImported);
+      
+      // Update state and save to repository
+      setTasks(mergedTasks);
+      
+      // Save will happen automatically via useEffect, but we can also save immediately
+      if (!isTestOrInjected) {
+        try {
+          await taskRepository.saveTasks(mergedTasks);
+        } catch (error) {
+          console.error('Failed to save imported tasks:', error);
+          pushToast({ message: 'Imported but failed to save to storage', tone: "error" });
+          return;
+        }
+      }
+
+      pushToast({ message: `Imported ${normalizedImported.length} task${normalizedImported.length !== 1 ? 's' : ''}`, tone: "success" });
+    } catch (error) {
+      console.error('Import failed:', error);
+      pushToast({ message: error.message || 'Failed to import tasks', tone: "error" });
+    }
+  };
+
+  const handleResetTasks = async () => {
+    try {
+      // Clear repository storage
+      if (!isTestOrInjected) {
+        await taskRepository.clearTasks();
+      }
+      
+      // Reset to default tasks
+      setTasks(defaultTasks);
+      pushToast({ message: "Local data reset", tone: "success" });
+    } catch (error) {
+      console.error('Reset failed:', error);
+      pushToast({ message: 'Failed to reset local data', tone: "error" });
+    }
+  };
+
   const handleCreateTask = (newTaskData) => {
     // Convert hours and minutes to total minutes
     const hours = newTaskData.estimateHours ? parseInt(newTaskData.estimateHours, 10) : 0;
     const minutes = newTaskData.estimateMinutes ? parseInt(newTaskData.estimateMinutes, 10) : 0;
     const totalMinutes = hours * 60 + minutes;
     
-    const newTask = {
+    // Normalize dueDate: if it's a date string like "2026-01-08", convert to ISO string at end of day (local time)
+    let dueDate = newTaskData.dueDate || null;
+    if (dueDate && typeof dueDate === 'string' && dueDate.trim() !== '') {
+      // If it's just a date (YYYY-MM-DD), treat as end of day local time
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+        const dateObj = new Date(dueDate);
+        dateObj.setHours(23, 59, 59, 999);
+        dueDate = dateObj.toISOString();
+      }
+      // Otherwise, assume it's already a valid ISO string
+    } else {
+      dueDate = null;
+    }
+    
+    const rawTask = {
       ...newTaskData,
       id: crypto.randomUUID ? crypto.randomUUID() : Date.now(),
-      estimateMinutesTotal: totalMinutes > 0 ? totalMinutes : null
+      estimateMinutesTotal: totalMinutes > 0 ? totalMinutes : null,
+      createdAt: Date.now(),
+      dueDate: dueDate,
+      notificationFrequency: newTaskData.notificationFrequency || null
     };
     
     // Remove estimateHours and estimateMinutes from task (they're not part of the canonical format)
-    delete newTask.estimateHours;
-    delete newTask.estimateMinutes;
+    delete rawTask.estimateHours;
+    delete rawTask.estimateMinutes;
+    
+    // Normalize task to ensure dueDate and notificationFrequency have proper defaults
+    const newTask = normalizeTask(rawTask);
     
     setTasks(prevTasks => [...prevTasks, newTask]);
     setPendingAssignmentTaskId(newTask.id);
@@ -401,7 +713,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     setTasks(prevTasks => 
       prevTasks.map(task => 
         task.id === pendingAssignmentTaskId
-          ? { ...task, urgent: flags.urgent, important: flags.important }
+          ? updateTaskSyncFields({ ...task, urgent: flags.urgent, important: flags.important })
           : task
       )
     );
@@ -462,7 +774,7 @@ function App({ initialTasks, __test_onDragEnd }) {
         const taskIdString = String(task.id);
         const draggedIdString = String(draggedTaskId);
         return taskIdString === draggedIdString
-          ? { ...task, urgent: flags.urgent, important: flags.important }
+          ? updateTaskSyncFields({ ...task, urgent: flags.urgent, important: flags.important })
           : task;
       })
     );
@@ -474,7 +786,7 @@ function App({ initialTasks, __test_onDragEnd }) {
         setTasks(prevTasks =>
           prevTasks.map(task =>
             String(task.id) === String(previousSnapshot.id)
-              ? { ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important }
+              ? updateTaskSyncFields({ ...task, urgent: previousSnapshot.urgent, important: previousSnapshot.important })
               : task
           )
         );
@@ -515,6 +827,12 @@ function App({ initialTasks, __test_onDragEnd }) {
   };
 
   const getUrgencyFromTask = (task) => {
+    // Use deadline urgency if dueDate exists, otherwise fall back to quadrant-based urgency
+    const deadlineUrgency = getDeadlineUrgency(task.dueDate);
+    if (deadlineUrgency !== null) {
+      return deadlineUrgency;
+    }
+    // Fall back to quadrant-based urgency
     if (task.urgent && task.important) return 'red';
     if (task.important && !task.urgent) return 'yellow';
     if (task.urgent && !task.important) return 'yellow';
@@ -531,8 +849,8 @@ function App({ initialTasks, __test_onDragEnd }) {
     return `${estimateMinutesTotal}m`;
   };
 
-  // Filter out completed tasks (completedAt is set)
-  const activeTasks = tasks.filter(task => !task.completedAt);
+  // Filter out completed tasks (completedAt is set) and deleted tasks (deletedAt is set)
+  const activeTasks = tasks.filter(task => !task.completedAt && !task.deletedAt);
   
   const q1Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q1');
   const q2Tasks = activeTasks.filter(task => getQuadrant(task) === 'Q2');
@@ -658,6 +976,30 @@ function App({ initialTasks, __test_onDragEnd }) {
         onDeleteTask={handleDeleteTask}
         onCompleteTask={handleCompleteTask}
         startInEdit={startModalInEditMode}
+      />
+      <SettingsMenu
+        onExport={handleExportTasks}
+        onImport={handleImportTasks}
+        onReset={handleResetTasks}
+        notificationPreferences={notificationPreferences}
+        onUpdateNotificationPreferences={(prefs) => {
+          setNotificationPreferences(prefs);
+          savePreferences(prefs);
+        }}
+        onAuthStateChange={handleAuthStateChange}
+        onRequestBrowserPermission={async () => {
+          const permission = await requestBrowserPermission();
+          if (permission === 'granted') {
+            setNotificationPreferences(prev => {
+              const updated = { ...prev, browserNotifications: true };
+              savePreferences(updated);
+              return updated;
+            });
+            pushToast({ message: 'Browser notifications enabled', tone: 'success' });
+          } else {
+            pushToast({ message: 'Browser notifications permission denied', tone: 'error' });
+          }
+        }}
       />
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
       <PageDots active={view} onSelect={setView} />

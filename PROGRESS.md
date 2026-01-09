@@ -12,6 +12,113 @@
 
 ---
 
+## Current Status (Today)
+
+### ✅ Milestone A: Complete
+**localStorage persistence + undo wiring + tests**
+
+**Implemented:**
+- localStorage persistence utilities (`src/utils/storage.js`)
+- Tasks automatically load from localStorage on app start (`src/App.jsx`)
+- Tasks automatically save to localStorage on changes (gated for tests)
+- Undo functionality for auto-place toast (restores previous urgent/important flags) (`src/App.jsx:437-455`)
+- Undo functionality for drag move toast (restores previous quadrant, supports merged moves) (`src/App.jsx:437-455`)
+- Comprehensive tests (`src/App.persistence.test.jsx`, `src/App.undo.test.jsx`)
+
+### ✅ Milestone B: Complete
+**Task Details Modal + Edit + Complete + Delete + tests**
+
+**Implemented:**
+- TaskDetailsModal component (`src/components/TaskDetailsModal.jsx`)
+- Modal entry points: click, right-click (edit mode), Enter key (`src/App.jsx:284-292`, `src/components/TaskBubble.jsx:67-72`)
+- Edit mode with full form validation (`src/components/TaskDetailsModal.jsx:88-108`)
+- Mark complete functionality (sets completedAt, filters from matrix) (`src/App.jsx:316-323`)
+- Delete task functionality with confirmation (`src/App.jsx:310-314`)
+- Toast notifications for all actions (`src/App.jsx:307,313,323`)
+- Drag conflict resolved (PointerSensor activationConstraint) (`src/App.jsx:43-48`)
+- Comprehensive tests (`src/App.taskDetailsModal.test.jsx`)
+
+### ✅ Milestone C: Complete
+**Right Now View + sorting + page dots + arrow keys + tests**
+
+**Implemented:**
+- RightNowView component (`src/components/RightNowView.jsx`)
+- Sorting algorithm (`src/utils/rightNowSort.js`) - estimate ascending, then quadrant Q1→Q4, then createdAt/id
+- Prioritized task list with quadrant indicators, estimate badges, priority badges
+- Mark complete from list (uses existing completion pathway)
+- Empty state ("All done!" message)
+- Page dots navigation (`src/components/PageDots.jsx`)
+- Arrow key navigation (ArrowLeft/ArrowRight) (`src/App.jsx:303-312`)
+- View switching between Matrix and Right Now (`src/App.jsx:58`)
+- Comprehensive tests (`src/App.rightNowView.test.jsx` - 11 tests, `src/utils/rightNowSort.test.js` - 9 tests)
+
+### ✅ Milestone F: Complete
+**Backend-ready auth + per-user sync architecture (local-first, optional remote)**
+
+**Implemented:**
+- ✅ **Sync model + identifiers** - Task model includes sync fields: id (UUID string), updatedAt (ISO string), createdAt (ISO string), deletedAt (ISO string | null), completedAt (ISO string | null), deviceId (persisted in localStorage "eisenhower.deviceId"), revision (number, increments on mutations). normalizeTask() sets defaults for all sync fields.
+- ✅ **Merge engine** - Created `src/sync/mergeTasks.js` with `mergeLocalAndRemote()` pure function. Rules: key by task.id, deletion tombstone wins if newer, higher revision wins, updatedAt tie-break, preserves unknown fields, no duplicate ids, keeps tombstones for propagation.
+- ✅ **Repository seam upgrades** - Expanded `src/data/index.js` to support modes via `VITE_TASK_REPO_MODE` env var: local (default), hybrid (local + remote sync), remote-only. Created `getTaskRepository(authContext)` function.
+- ✅ **HybridTaskRepository** - Created `src/data/HybridTaskRepository.js` that merges local and remote tasks. loadTasks() loads local, optionally loads remote if authenticated, merges via merge engine, saves merged back to local. saveTasks() saves local immediately, optionally saves remote if authenticated and online, enqueues to outbox on failure.
+- ✅ **RemoteTaskRepositoryStub upgrade** - Added `loadTasksForUser(userId)` and `saveTasksForUser(userId, tasks)` methods with clear TODOs for Supabase/Firebase implementation paths. Fails gracefully when stub throws.
+- ✅ **Auth stub + UI** - Created `src/auth/AuthProvider.jsx` with context providing user (id, email) | null, status ("anonymous" | "authenticated"), signIn() placeholder (sets mock user), signOut() (clears user). Added Account section to SettingsMenu with sign in/out UI. When switching auth state, tasks reload via repository load.
+- ✅ **Sync outbox** - Implemented `src/sync/syncOutbox.js` with localStorage key "eisenhower.syncOutbox.v1". Stores operations like `{ id, type:"saveSnapshot", createdAtISO, payload:{ tasks, userId } }`. Hybrid saveTasks enqueues on remote failure. Deduplication: keeps only latest snapshot per userId. Retry on app focus/online event (window 'online' + visibilitychange).
+- ✅ **Tests** - Unit tests for merge engine (local newer wins, remote newer wins, deletion tombstone wins, equal revision uses updatedAt tie-break, preserves unknown fields, no duplicate ids). Repository selection tests (env mode local/hybrid/remote, hybrid doesn't crash when Remote throws). Outbox tests (remote failure enqueues, retry flushes outbox).
+- ✅ **App.jsx updates** - All task mutations (create, edit, delete, complete, drag move) increment revision and update updatedAt via `updateTaskSyncFields()` utility. Tasks filtered to exclude deletedAt. Wrapped with AuthProvider in main.jsx. Uses getTaskRepository(authContext) for repository selection.
+
+**Backend integration plan:**
+- **SupabaseTaskRepository**: Replace RemoteTaskRepositoryStub methods with Supabase client. Initialize Supabase client with project URL and anon key. loadTasksForUser: `supabase.from('tasks').select('*').eq('user_id', userId)`. saveTasksForUser: `supabase.from('tasks').upsert(tasks.map(t => ({ ...t, user_id: userId })))`. Add real-time subscriptions for sync.
+- **FirebaseTaskRepository**: Replace RemoteTaskRepositoryStub methods with Firebase client. Initialize Firebase with config. loadTasksForUser: `db.collection('tasks').where('userId', '==', userId).get()`. saveTasksForUser: Batch write with `db.collection('tasks').doc(task.id).set({ ...task, userId })`. Add Firestore listeners for real-time sync.
+
+**Non-goals (explicitly NOT implemented yet):**
+- Real Supabase/Firebase SDK integration (stub only)
+- Real OAuth UI flows (placeholder sign in only)
+- Push notifications backend
+
+### ✅ Milestone E: Complete
+**Notification system scaffolding (local-only, backend-ready)**
+
+**Implemented:**
+- Notification preferences model with localStorage persistence (`src/notifications/notificationPreferences.js`)
+  - Quiet hours (default 22:00-08:00)
+  - Default times for low/medium/high frequency tiers
+  - In-app reminders toggle (default ON)
+  - Browser notifications toggle (default OFF, opt-in)
+- Notification rules engine (`src/notifications/notificationRules.js`)
+  - `deriveEffectiveFrequency`: escalates to "high" when dueDate within 4 days
+  - `shouldDriftToQ1`: detects Q2 tasks with dueDate within 48h
+- NotificationScheduler pure function (`src/notifications/NotificationScheduler.js`)
+  - `scheduleNext`: plans notifications based on frequency tiers and quiet hours
+  - Weekly patterns: Low (Sunday 18:00), Medium (Mon/Wed/Fri 09:00), High (Daily 09:00)
+  - Quiet hours adjustment (pushes fire time forward if within quiet hours)
+  - Stable notification IDs for deduplication
+- InAppNotifier (`src/notifications/InAppNotifier.js`) - toast integration
+- BrowserNotifier (`src/notifications/BrowserNotifier.js`) - optional browser Notification API
+- Runtime tick in App.jsx (`src/App.jsx:410-490`)
+  - Runs every 60 seconds
+  - Triggers on visibility change (tab focus)
+  - Fires notifications via InAppNotifier and BrowserNotifier
+  - Persists fired notifications log (last 500 entries)
+- Drift execution: auto-moves Q2 tasks to Q1 when dueDate within 48h
+- Notification preferences UI in SettingsMenu (`src/components/SettingsMenu.jsx`)
+  - Toggle in-app reminders
+  - Toggle browser notifications (requests permission)
+  - Quiet hours time inputs
+- Comprehensive tests:
+  - `src/notifications/notificationRules.test.js` - 19 tests
+  - `src/notifications/NotificationScheduler.test.js` - 11 tests
+  - `src/App.notifications.test.jsx` - integration tests
+
+### Known Gaps / Polish
+- **Undo for delete/complete actions** - Only undo exists for drag moves and auto-placement
+- **Quadrant overflow count badges** - No badge when >5 tasks in quadrant
+- **Q1 overload warnings** - No warning badge or suggestions when 8+ tasks in Q1
+- **Q1 empty celebration** - Standard empty state, no confetti animation or Q2 task suggestion
+- **Swipe gestures** - No swipe navigation between views (using page dots/arrow keys instead)
+- **Manual reordering in Right Now** - Sorting is algorithm-based only, no drag-to-reorder
+
+---
+
 ## How to Update Progress
 
 After each merged change / completed step:
@@ -37,8 +144,8 @@ Before major refactors:
 - ❌ **Pull-down gesture** - Not implemented (PRD mentions this alternative)
 - ✅ **Creation form** - Modal overlay with title, urgency, importance checkboxes
 - ✅ **Time estimate input** - Hours and minutes number inputs
-- ❌ **Due date picker** - Not in creation form
-- ❌ **Notification frequency** - Low/Medium/High buttons not in form
+- ✅ **Due date picker** - Date input field in creation form (`src/components/TaskCreationOverlay.jsx`)
+- ✅ **Notification frequency** - Low/Medium/High toggle buttons in form (`src/components/TaskCreationOverlay.jsx`)
 - ✅ **Form validation** - Title required, other fields optional
 
 ### Assignment & Auto-Placement
@@ -59,10 +166,10 @@ Before major refactors:
 ### Task Display
 - ✅ **Bubble UI elements** - Tasks display as bubble cards
 - ✅ **Task name display** - Shows on bubble
-- ✅ **Color-coded urgency** - Red (Q1), Yellow (Q2/Q3), Green (Q4) based on quadrant
+- ✅ **Color-coded urgency** - Deadline-based when dueDate exists (green >7 days, yellow 2-7 days, red <2 days or past), otherwise quadrant-based (Red Q1, Yellow Q2/Q3, Green Q4)
 - ✅ **Time estimate badges** - Shows formatted time ("Xh Ym" or "Nm") if provided
-- ❌ **Deadline-based color coding** - Not implemented (colors based on quadrant, not due date)
-- ✅ **Task details modal** - Bottom sheet modal opens on task click
+- ✅ **Deadline-based color coding** - Implemented (`src/utils/deadlineUrgency.js`): Uses `parseDueDateLocal` to normalize to local end-of-day (23:59:59.999), exact thresholds (2 days = 172,800,000 ms, 7 days = 604,800,000 ms), returns "green"/"yellow"/"red" or null. Falls back to quadrant-based urgency when no dueDate. Uses CSS variables (`--urgency-green`, `--urgency-yellow`, `--urgency-red`) in TaskBubble.
+- ✅ **Task details modal** - Bottom sheet modal opens on task click, displays dueDate and notificationFrequency
 
 ### Toast System
 - ✅ **Toast notifications** - ToastHost component displays toasts
@@ -100,52 +207,130 @@ Before major refactors:
 
 ---
 
+## Milestone A — ✅ Complete
+
+**localStorage persistence + undo wiring + tests**
+
+See "Current Status (Today)" section above for implementation details.
+
+---
+
 ## Milestone B — ✅ Complete
 
-### Task Details Modal
+**Task Details Modal + Edit + Complete + Delete + tests**
 
-**Implementation:**
-- **Component**: `src/components/TaskDetailsModal.jsx`
-- **State**: `selectedTaskId` in `src/App.jsx:54`
-- **Entry points**:
-  - **Click**: Opens modal via `handleTaskClick()` → `TaskBubble` onClick
-  - **Right-click**: Opens modal in edit mode via `handleTaskContextMenu()`
-  - **Keyboard**: Enter key on focused TaskBubble opens modal
-- **Drag conflict resolved**: PointerSensor with `activationConstraint: { distance: 8 }` allows clicks without triggering drag
-
-**Features Implemented:**
-- Modal displays all task fields: Title, Urgent, Important, Estimate, Priority, Quadrant
-- Edit mode with full form validation
-- Save/Cancel buttons update central state via `handleUpdateTask()`
-- Mark complete: Sets `completedAt` timestamp, removes task from matrix (filtered out by `activeTasks.filter(task => !task.completedAt)`)
-- Delete: Removes task from array and closes modal
-- Toast notifications: "Task updated", "Deleted task", "Completed: {title}"
-- Comprehensive tests: 6 tests in `src/App.taskDetailsModal.test.jsx` covering open, edit, delete, complete, quadrant movement, and persistence
-
-**Persistence:**
-- Task updates, completions, and deletions are persisted to localStorage via existing persistence system
-
-**Explicit Gap:**
-- **Undo for delete/complete not implemented** (only drag undo exists in `src/App.jsx:437-455`)
+See "Current Status (Today)" section above for implementation details.
 
 ---
 
-## Right Now View
+## Milestone C — ✅ Complete
 
-- ✅ **View implemented** - RightNowView component at `src/components/RightNowView.jsx`
-- ✅ **Sorting algorithm** - `sortTasksForRightNow` in `src/utils/rightNowSort.js` (estimate ascending, then quadrant Q1→Q4, then createdAt/id)
-- ✅ **Prioritized list** - Vertical list of tasks sorted by algorithm
-- ✅ **Task details in list** - Displays title, quadrant indicator, estimate badge, priority badge
-- ✅ **Mark complete from list** - Complete button on each task row (uses same completion pathway)
-- ❌ **Manual reordering** - Not implemented (sorting is algorithm-based only)
+**Right Now View + sorting + page dots + arrow keys + tests**
+
+See "Current Status (Today)" section above for implementation details.
 
 ---
 
-## Navigation
+## Milestone D
 
-- ✅ **View switching** - Toggle buttons in header to switch between Matrix and Right Now views
-- ❌ **Swipe gestures** - Not implemented (swipe right/left between views)
-- ❌ **Page dots indicator** - No view indicator (using toggle buttons instead)
+### ✅ D1: Repository seam + local persistence (Complete)
+
+**Implemented:**
+- ✅ **Repository seam + local persistence** - TaskRepository abstraction (`src/data/TaskRepository.js`) with LocalTaskRepository implementation (`src/data/LocalTaskRepository.js`) using localStorage key "eisenhower.tasks.v1". Future-proofed for Supabase/Firebase swap without touching UI/business logic. Handles parse errors gracefully (returns null, doesn't crash). Migration ensures all tasks have id, title/name, urgent, important, createdAt. App.jsx loads tasks asynchronously on mount and saves with debouncing (200ms) on task changes.
+
+### ✅ D2: Due date + notification frequency (create + edit + persistence) (Complete)
+
+**Implemented:**
+- ✅ **normalizeTask utility** - Created `src/utils/normalizeTask.js` with `deriveDefaultFrequency` helper and `normalizeTask` function. Ensures all tasks have `dueDate` (null if missing) and `notificationFrequency` (default based on quadrant: Q1=high, Q2=medium, Q3/Q4=low). Used consistently in repository migration and task creation (`src/data/LocalTaskRepository.js`, `src/App.jsx`).
+- ✅ **Task model** - Tasks support `dueDate` (string | null, stored as "YYYY-MM-DD" or ISO string) and `notificationFrequency` ("low" | "medium" | "high", always set, never null for new tasks).
+- ✅ **TaskCreationOverlay** - Due date picker (native `<input type="date">` labeled "Due date") and frequency selector (Low/Medium/High pill buttons labeled "Reminder frequency"). Default frequency derived from quadrant based on urgent/important toggles (Q1=high, Q2=medium, Q3/Q4=low). "Touched" behavior: if user manually selects frequency, it does NOT auto-change when toggles change afterward (`userManuallySetFrequency` ref). Empty dueDate string normalized to null on submit. Frequency always set to concrete value (never null) on submit (`src/components/TaskCreationOverlay.jsx`).
+- ✅ **TaskDetailsModal** - View mode displays "Due date" and "Reminder frequency" fields (shows "None" if missing). Edit mode allows editing both via date input and 3-button selector. Frequency buttons set value (no toggle to null). Empty dueDate string normalized to null on save (`src/components/TaskDetailsModal.jsx`).
+- ✅ **Persistence** - Due date and notification frequency automatically included in persistence (no UI regression). Repository uses normalizeTask for migration and validation (`src/data/LocalTaskRepository.js`).
+- ✅ **Tests** - Created `src/utils/normalizeTask.test.js` with tests for `deriveDefaultFrequency` and `normalizeTask` (default frequency derivation for all quadrants, dueDate normalization, field preservation). Extended `src/App.createTaskOverlay.test.jsx` with tests for default frequency derivation (Q1/Q2/Q3/Q4), touched behavior (user override doesn't change when toggles update), and create flow persistence. Extended `src/App.taskDetailsModal.test.jsx` with tests for edit flow persistence. All tests deterministic (no Date.now() reliance, mocked localStorage).
+
+### ✅ D3: Deadline-based urgency colors (Complete)
+
+**Implemented:**
+- ✅ **deadlineUrgency utility** - Created `src/utils/deadlineUrgency.js` with `parseDueDateLocal` and `getDeadlineUrgency` functions. Parses dueDate as local end-of-day (23:59:59.999) to avoid timezone bugs. Exact thresholds: 2 days = 172,800,000 ms, 7 days = 604,800,000 ms. Returns "green" (> 7 days), "yellow" (2-7 days), or "red" (< 2 days or past).
+- ✅ **CSS variables for urgency colors** - Added `--urgency-green`, `--urgency-yellow`, `--urgency-red` in `src/styles/tokens.css`.
+- ✅ **TaskBubble updates** - Updated `src/components/TaskBubble.jsx` to use CSS variables when urgency label is provided (green/yellow/red), with fallback to hex colors for backward compatibility. Added `data-testid="task-urgency-indicator"` for testing.
+- ✅ **App.jsx urgency logic** - Updated `getUrgencyFromTask` to use deadline urgency if dueDate exists, otherwise fallback to quadrant-based urgency. Same logic in `src/components/Quadrant.jsx`.
+- ✅ **Deterministic tests** - Updated `src/utils/deadlineUrgency.test.js` and `src/App.deadlineUrgency.test.jsx` to use fixed "now" date (2026-01-08T12:00:00) for deterministic testing. All 22 tests passing.
+
+**Non-goals (explicitly NOT implemented yet):**
+- Push notifications scheduling/escalation
+- Q2→Q1 drift
+- Backend auth/sync
+
+### ✅ D4: Future-proof persistence + portability (export/import) + schema/version hardening (Complete)
+
+**Implemented:**
+- ✅ **Repository selection seam** - Created `src/data/index.js` that exports `taskRepository` based on `VITE_TASK_REPO` env var (default: 'local' for LocalTaskRepository, 'stub' for RemoteTaskRepositoryStub). All UI code imports from `src/data` instead of concrete implementations, future-proofing for Supabase/Firebase swap.
+- ✅ **RemoteTaskRepositoryStub** - Created `src/data/RemoteTaskRepositoryStub.js` with placeholder implementation throwing clear errors, includes TODOs showing where Supabase/Firebase logic will go.
+- ✅ **Versioned storage schema** - Updated `src/utils/storage.js` and `src/data/LocalTaskRepository.js` to use versioned format: `{ version: 1, tasks: [...] }` instead of raw array. Migration automatically converts old array format (version 0) to version 1 on load.
+- ✅ **Migration logic** - Detects old array format (version 0) and migrates to version 1, preserving all task fields including unknown fields for forward compatibility. Normalizes each task via `normalizeTask()` utility. Ensures all tasks have: id, title, urgent (boolean), important (boolean), dueDate (string|null), notificationFrequency ("low"|"medium"|"high"), estimateMinutesTotal (number|null), createdAt (ISO string/timestamp), completedAt (ISO string/timestamp|null).
+- ✅ **Guardrails** - Gracefully handles corrupted JSON (returns null, doesn't crash app startup), extremely large arrays (>10,000 tasks), invalid data formats, and unknown schema versions. Never crashes app on persistence errors.
+- ✅ **Export/Import functionality** - Created `src/utils/exportImport.js` with `exportTasks()`, `parseImportFile()`, and `mergeTasksById()` utilities. Export creates JSON file with `{ version: 1, exportedAt: "...", tasks: [...] }` and triggers browser download. Import accepts version 1 or version 0 (array) format, validates, migrates, normalizes, and merges by id (imported tasks overwrite existing tasks with same id). Shows toast notifications: "Exported X tasks", "Imported X tasks", or error messages.
+- ✅ **Settings menu UI** - Created `src/components/SettingsMenu.jsx` with "⋯" button in top-right corner. Dropdown menu with "Export tasks", "Import tasks" (opens file picker), and "Reset local data" (with confirmation dialog) options.
+- ✅ **Reset functionality** - Clears localStorage via repository helper, resets app to default demo tasks, shows toast: "Local data reset".
+- ✅ **Comprehensive tests** - Extended `src/data/LocalTaskRepository.test.js` with tests for versioned schema (save/load), migration from v0 to v1, corrupted JSON handling, large array guardrails, unknown field preservation, and invalid task skipping. Created `src/utils/exportImport.test.js` with tests for export format, import parsing (version 1 and version 0), merge logic, error handling. Created `src/App.importExport.test.jsx` with App-level integration tests for export flow, import flow with file simulation, error handling, and reset with confirm/cancel.
+- ✅ **App.jsx updates** - Updated to import `taskRepository` from `src/data` instead of `LocalTaskRepository` directly. Added SettingsMenu component with export/import/reset handlers wired up.
+
+**Data Format:**
+- **Version 1 schema (current):** `{ version: 1, tasks: [...] }`
+- **Version 0 schema (legacy, auto-migrated):** `[...]` (array of tasks)
+- **Export format:** `{ version: 1, exportedAt: "ISO string", tasks: [...] }`
+- **All tasks normalized:** id (string), title (string), urgent (boolean), important (boolean), dueDate (string|null), notificationFrequency ("low"|"medium"|"high"), estimateMinutesTotal (number|null), createdAt (timestamp/ISO string), completedAt (timestamp/ISO string|null), plus any unknown fields preserved for forward compatibility.
+
+**Non-goals (explicitly NOT implemented yet):**
+- Real Supabase/Firebase integration (stub only)
+- Auth, sync, or push notifications
+- Remote storage persistence
+
+**Storage seam ready for Supabase/Firebase via taskRepository selection** - Simply implement RemoteTaskRepositoryStub methods with real Supabase/Firebase client code, set `VITE_TASK_REPO=stub` (or rename env var), and all UI code will use remote storage without changes.
+
+---
+
+## Next: Milestone D (Additional Features)
+
+- [ ] **Undo for delete/complete actions**
+  - [ ] Add undo toast for delete actions
+  - [ ] Add undo toast for complete actions
+  - [ ] Store deleted task state for restoration
+  - [ ] Store completed task state for restoration
+  - [ ] Wire undo handlers in App.jsx
+  - [ ] Add tests for delete/complete undo
+
+- [ ] **Quadrant overflow badges**
+  - [ ] Detect when quadrant has >5 tasks
+  - [ ] Display count badge in quadrant top-right
+  - [ ] Badge styling and positioning
+  - [ ] Add tests for badge display logic
+
+- [ ] **Q1 overload warnings**
+  - [ ] Detect when Q1 has 8+ tasks
+  - [ ] Display warning badge on Q1
+  - [ ] Tap warning shows suggestions modal
+  - [ ] Suggestions for rescheduling/deleting/moving tasks
+  - [ ] Add tests for warning display
+
+- [ ] **Q1 empty celebration**
+  - [ ] Detect when Q1 becomes empty
+  - [ ] Trigger confetti animation
+  - [ ] Show Q2 task suggestion ("Nice! Want to get ahead on something important?")
+  - [ ] Add tests for celebration trigger
+
+- [ ] **Swipe gestures for navigation**
+  - [ ] Detect swipe right (Matrix → Right Now)
+  - [ ] Detect swipe left (Right Now → Matrix)
+  - [ ] Ignore swipes while dragging/scrolling
+  - [ ] Add tests for swipe detection
+
+- [ ] **Manual reordering in Right Now view**
+  - [ ] Enable drag-to-reorder within Right Now list
+  - [ ] Store manual order override
+  - [ ] Merge manual order with algorithm sorting
+  - [ ] Add tests for reordering
 
 ---
 
@@ -167,11 +352,15 @@ Before major refactors:
 ## Persistence & Sync
 
 ### Local Storage
-- ✅ **localStorage** - Tasks persist to localStorage, loaded on app start
+- ✅ **localStorage** - Tasks persist to localStorage via repository abstraction, loaded asynchronously on app start
 - ❌ **sessionStorage** - Not implemented
 - ❌ **IndexedDB** - Not implemented
-- ✅ **Task persistence** - Tasks saved to localStorage on change, loaded on mount (unless initialTasks provided for tests)
-- ✅ **In-memory state** - Tasks exist only in React component state
+- ✅ **Task persistence** - Tasks saved to localStorage via repository with debounced saves (200ms), loaded asynchronously on mount (unless initialTasks provided for tests)
+- ✅ **Repository abstraction** - Future-proofed data layer (`src/data/TaskRepository.js`, `src/data/LocalTaskRepository.js`, `src/data/index.js`) allows swapping to Supabase/Firebase without touching UI/business logic via environment variable (`VITE_TASK_REPO`)
+- ✅ **Versioned schema** - Storage format: `{ version: 1, tasks: [...] }` with automatic migration from legacy array format (version 0) to version 1
+- ✅ **Migration support** - Backwards-compatible migration adds missing fields (dueDate, notificationFrequency, createdAt) with sensible defaults. Preserves unknown fields for forward compatibility
+- ✅ **Export/Import** - Users can export tasks to JSON file and import from JSON file for portability across devices. Import merges by id (imported overwrites existing)
+- ✅ **Corruption handling** - Gracefully handles corrupted JSON, invalid data, large arrays, and unknown versions (returns null, doesn't crash app)
 
 ### Backend & Sync
 - ❌ **Backend service** - No backend (no Firebase, Cloud Functions, etc.)
@@ -191,7 +380,7 @@ Before major refactors:
 ### Edit Task
 - ✅ **Edit functionality** - Edit mode in task details modal
 - ✅ **Edit button** - "Edit" button in modal header
-- ✅ **Modify fields** - Can edit title, urgent/important, priority, estimate
+- ✅ **Modify fields** - Can edit title, urgent/important, priority, estimate, dueDate, and notificationFrequency
 
 ### Mark Complete
 - ✅ **Mark complete button** - Primary button in task details modal
@@ -255,6 +444,7 @@ Before major refactors:
 - ✅ **formatEstimateMinutes utility** - Tests in `timeFormat.test.js`
 - ✅ **sortTasksForRightNow utility** - Tests in `rightNowSort.test.js`
 - ✅ **Quadrant component** - Tests in `Quadrant.test.jsx`
+- ✅ **getDeadlineUrgency utility** - Tests in `deadlineUrgency.test.js` (green/yellow/red thresholds, edge cases, date handling)
 
 ### Integration Tests
 - ✅ **Task creation flow** - Tests in `App.createTaskOverlay.test.jsx`
@@ -264,6 +454,9 @@ Before major refactors:
 - ✅ **Task movement toasts** - Tests verify toast messages
 - ✅ **Time estimate calculation** - Tests verify estimateMinutesTotal calculation
 - ✅ **Right Now view** - Tests in `App.rightNowView.test.jsx` (rendering, sorting, click handlers, completion, navigation)
+- ✅ **Deadline urgency rendering** - Tests in `App.deadlineUrgency.test.jsx` (green/yellow/red based on dueDate, fallback to quadrant-based)
+- ✅ **Repository persistence** - Tests in `App.persistence.test.jsx` (async loading, debounced saves) and `LocalTaskRepository.test.js` (migration, validation, versioning, corruption handling)
+- ✅ **Export/Import functionality** - Tests in `exportImport.test.js` (export format, import parsing, merge logic) and `App.importExport.test.jsx` (App-level integration tests for export/import/reset flows)
 
 ### Test Coverage
 - ✅ **Core functionality** - Task creation, assignment, drag-and-drop, auto-placement
@@ -314,45 +507,5 @@ Before major refactors:
 
 ---
 
-## Milestone C — ✅ Complete
-
-### Right Now View
-
-**Implementation:**
-- **Component**: `src/components/RightNowView.jsx` (and CSS)
-- **Sorting Utility**: `src/utils/rightNowSort.js` exporting `sortTasksForRightNow(tasks)`
-- **Navigation**: Toggle buttons in App header (`app-header__view-toggle` in `App.jsx`)
-- **State**: View state `"matrix" | "rightNow"` in `App.jsx`
-
-**Features Implemented:**
-- Vertical list of tasks sorted by algorithm (estimate ascending, then quadrant Q1→Q4, then createdAt/id)
-- Displays: task title, quadrant indicator (Q1/Q2/Q3/Q4 with color), estimate badge (using `formatEstimateMinutes`), priority badge (if present)
-- Clicking a task row opens TaskDetailsModal via existing `handleTaskClick`
-- Mark complete button on each row uses existing `handleCompleteTask` (sets completedAt, filters out from both views)
-- Empty state when no active tasks ("All done!" message)
-- View switching between Matrix and Right Now via toggle buttons
-- Comprehensive tests: 9 tests in `App.rightNowView.test.jsx`, 9 tests in `rightNowSort.test.js`
-
-**Sorting Algorithm:**
-1. `estimateMinutesTotal` ascending (missing estimate → default 30 minutes)
-2. Quadrant order: Q1, Q2, Q3, Q4 (using `getQuadrant`)
-3. Stable tie-breaker: `createdAt` (if present), else `id` (ascending)
-
-**Explicit Gap:**
-- **Manual reordering** not implemented (sorting is algorithm-based only, no drag-to-reorder in Right Now view)
-
----
-
-## Next Priorities
-
-1. ✅ **Persistence** - localStorage implemented
-2. ✅ **Undo functionality** - Undo wired up for auto-place and drag move toasts
-3. ✅ **Task details modal** - View, edit, complete, delete implemented
-4. ✅ **Mark complete** - Task lifecycle with completion tracking
-5. ✅ **Right Now view** - Prioritized task list implemented
-6. **Accessibility audit** - Fix ARIA labels, keyboard navigation
-
----
-
-**Last Updated:** 2026-01-09 (Milestone C: Right Now View completed)
+**Last Updated:** 2026-01-08 (Status update: Milestones A, B, C, D1, D2, D3, D4 complete - D4: Future-proof persistence with versioned schema (v1), repository selection seam (VITE_TASK_REPO env var), RemoteTaskRepositoryStub for Supabase/Firebase placeholder, export/import functionality (JSON files with version metadata), SettingsMenu UI (export/import/reset), comprehensive tests for versioning, migrations, corruption handling, and import/export flows. Storage format: `{ version: 1, tasks: [...] }` with auto-migration from legacy array format.)
 

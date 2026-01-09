@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { getQuadrant } from '../utils/taskLogic.js';
 import './TaskCreationOverlay.css';
 
 function TaskCreationOverlay({ isOpen, onSubmit, onClose }) {
@@ -8,6 +9,40 @@ function TaskCreationOverlay({ isOpen, onSubmit, onClose }) {
   const [priority, setPriority] = useState('');
   const [estimateHours, setEstimateHours] = useState('');
   const [estimateMinutes, setEstimateMinutes] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [notificationFrequency, setNotificationFrequency] = useState(null);
+  const userManuallySetFrequency = useRef(false);
+
+  // Update default frequency based on quadrant, unless user manually set it
+  useEffect(() => {
+    if (!userManuallySetFrequency.current) {
+      const quadrant = getQuadrant({ urgent, important });
+      let defaultFrequency = null;
+      if (quadrant === 'Q1') {
+        defaultFrequency = 'high';
+      } else if (quadrant === 'Q2') {
+        defaultFrequency = 'medium';
+      } else {
+        defaultFrequency = 'low';
+      }
+      setNotificationFrequency(defaultFrequency);
+    }
+  }, [urgent, important]);
+
+  // Reset form state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setTitle('');
+      setUrgent(false);
+      setImportant(false);
+      setPriority('');
+      setEstimateHours('');
+      setEstimateMinutes('');
+      setDueDate('');
+      setNotificationFrequency(null);
+      userManuallySetFrequency.current = false;
+    }
+  }, [isOpen]);
 
   if (!isOpen) {
     return null;
@@ -22,28 +57,18 @@ function TaskCreationOverlay({ isOpen, onSubmit, onClose }) {
       important,
       ...(priority.trim() && { priority: priority.trim() }),
       ...(estimateHours !== '' && { estimateHours: estimateHours.toString() }),
-      ...(estimateMinutes !== '' && { estimateMinutes: estimateMinutes.toString() })
+      ...(estimateMinutes !== '' && { estimateMinutes: estimateMinutes.toString() }),
+      dueDate: dueDate || null,
+      notificationFrequency: notificationFrequency || null
     };
 
     onSubmit(taskData);
     
-    // Reset form
-    setTitle('');
-    setUrgent(false);
-    setImportant(false);
-    setPriority('');
-    setEstimateHours('');
-    setEstimateMinutes('');
+    // Form reset is handled by useEffect when isOpen changes
   };
 
   const handleCancel = () => {
-    // Reset form
-    setTitle('');
-    setUrgent(false);
-    setImportant(false);
-    setPriority('');
-    setEstimateHours('');
-    setEstimateMinutes('');
+    // Form reset is handled by useEffect when isOpen changes
     onClose();
   };
 
@@ -141,6 +166,57 @@ function TaskCreationOverlay({ isOpen, onSubmit, onClose }) {
                   step="1"
                 />
               </div>
+            </div>
+          </div>
+
+          <div className="task-creation-overlay__field">
+            <label htmlFor="dueDate" className="task-creation-overlay__label">
+              Due date
+            </label>
+            <input
+              id="dueDate"
+              type="date"
+              className="task-creation-overlay__input"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
+          </div>
+
+          <div className="task-creation-overlay__field">
+            <label className="task-creation-overlay__label">
+              Reminder frequency
+            </label>
+            <div className="task-creation-overlay__frequency-group">
+              <button
+                type="button"
+                className={`task-creation-overlay__frequency-button ${notificationFrequency === 'low' ? 'task-creation-overlay__frequency-button--active' : ''}`}
+                onClick={() => {
+                  userManuallySetFrequency.current = true;
+                  setNotificationFrequency('low');
+                }}
+              >
+                Low
+              </button>
+              <button
+                type="button"
+                className={`task-creation-overlay__frequency-button ${notificationFrequency === 'medium' ? 'task-creation-overlay__frequency-button--active' : ''}`}
+                onClick={() => {
+                  userManuallySetFrequency.current = true;
+                  setNotificationFrequency('medium');
+                }}
+              >
+                Medium
+              </button>
+              <button
+                type="button"
+                className={`task-creation-overlay__frequency-button ${notificationFrequency === 'high' ? 'task-creation-overlay__frequency-button--active' : ''}`}
+                onClick={() => {
+                  userManuallySetFrequency.current = true;
+                  setNotificationFrequency('high');
+                }}
+              >
+                High
+              </button>
             </div>
           </div>
 
