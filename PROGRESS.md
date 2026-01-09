@@ -85,6 +85,25 @@
 - ✅ **E4 Transfer unit tests** - Created `src/data/transfer/taskTransfer.test.js` with comprehensive tests: serialize produces valid JSON with version 1, tasks array, meta; parse supports versioned object and legacy array; parse fails gracefully on invalid JSON; mergeTasks dedupes by id and preserves order (existing order kept, new appended). Created `src/App.taskTransfer.test.jsx` integration test: export and persist after unmount/remount, Replace/Merge dialog handling, error handling for invalid files.
 
 ### ✅ Milestone F: Complete
+**Account + auth-ready, user-scoped storage (stubbed, no real Supabase/Firebase yet)**
+
+**Implemented:**
+- ✅ **F1 SessionStore + UI sign-in/out (stub)** - Created `src/data/session/SessionStore.js` with `getSession()` (returns `{ isSignedIn: boolean, userId: string | null }`), `signInStub()` (creates stable random userId like `user_<uuid>` and persists to localStorage), `signOut()` (clears session but does NOT delete task data). Created `src/data/session/sessionKeys.js` for localStorage key constants. Session uses versioned schema (version 1) with migration from legacy string format. Updated SettingsMenu to use SessionStore instead of AuthProvider, shows "Signed in as <short userId>" when signed in, "Sign in (stub)" when signed out.
+- ✅ **F2 User-scoped local storage keys** - Updated `src/data/storage/TaskStore.js` to support optional `storageKey` parameter in `loadTasks({ storageKey })`, `saveTasks(tasks, { storageKey })`, and `clearTasks({ storageKey })`. Maintains backward compatibility (defaults to original key if not provided). Storage keys are namespaced: anonymous user uses `tasks::anon`, signed-in user uses `tasks::<userId>`.
+- ✅ **F3 Repository wiring + account switching behavior** - Created `src/data/repository/TaskRepository.js` wrapper that uses SessionStore to get current userId and namespaces TaskStore calls. Exposes same interface as TaskStore (loadTasks/saveTasks/clearTasks) but automatically scopes to current user. Updated App.jsx to use TaskRepository instead of TaskStore directly. When session changes (sign in/out), App reloads tasks from new scope and shows toast: "Signed in as <short userId>" or "Signed out". Tasks do NOT merge between scopes - switching accounts switches views completely.
+- ✅ **F4 Tests for session + scope switching** - Created `src/data/session/SessionStore.test.js` with unit tests: getSession returns correct state, signInStub persists stable userId, signOut clears session, handles corrupt JSON and localStorage errors. Created `src/App.sessionScope.test.jsx` with integration tests: signing in switches storage scope (anon task disappears when signing in), signing out switches back to anon scope (signed-in task disappears), persistence across reload (task persists in signed-in scope after unmount/remount), toast notifications for sign in/out. Updated `src/App.persistence.test.jsx` to use TaskRepository instead of TaskStore directly.
+
+**Backend integration plan:**
+- **SupabaseTaskRepository**: Replace TaskRepository wrapper to use Supabase client. Initialize Supabase client with project URL and anon key. loadTasks: `supabase.from('tasks').select('*').eq('user_id', userId)`. saveTasks: `supabase.from('tasks').upsert(tasks.map(t => ({ ...t, user_id: userId })))`. Add real-time subscriptions for sync.
+- **FirebaseTaskRepository**: Replace TaskRepository wrapper to use Firebase client. Initialize Firebase with config. loadTasks: `db.collection('tasks').where('userId', '==', userId).get()`. saveTasks: Batch write with `db.collection('tasks').doc(task.id).set({ ...task, userId })`. Add Firestore listeners for real-time sync.
+
+**Non-goals (explicitly NOT implemented yet):**
+- Real Supabase/Firebase SDK integration (stub only)
+- Real OAuth UI flows (placeholder sign in only)
+- Import anon tasks into account (explicitly deferred)
+- RemoteTaskStore implementation (kept as stub)
+
+### ✅ Milestone G: Complete
 **Notification system scaffolding (local-only, backend-ready)**
 
 **Implemented:**

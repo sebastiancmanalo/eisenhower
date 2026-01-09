@@ -6,21 +6,26 @@
  * with remote storage (Supabase/Firebase) without changing App logic.
  * 
  * Functions:
- * - loadTasks(): returns { tasks, meta } where meta includes version
- * - saveTasks(tasks): persists tasks
- * - clearTasks(): clears persisted data
+ * - loadTasks({ storageKey }?): returns { tasks, meta } where meta includes version
+ * - saveTasks(tasks, { storageKey }?): persists tasks
+ * - clearTasks({ storageKey }?): clears persisted data
+ * 
+ * If storageKey is not provided, uses default key for backward compatibility.
  */
 
-const STORAGE_KEY = "eisenhower.tasks.v1";
+const DEFAULT_STORAGE_KEY = "eisenhower.tasks.v1";
 const CURRENT_SCHEMA_VERSION = 1;
 
 /**
  * Loads tasks from localStorage
+ * @param {{ storageKey?: string }} options - Optional storage key override
  * @returns {Promise<{ tasks: Array, meta: { version: number } }>} Returns tasks and metadata, or empty array if no data/corrupted
  */
-export async function loadTasks() {
+export async function loadTasks(options = {}) {
+  const storageKey = options.storageKey || DEFAULT_STORAGE_KEY;
+  
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (!stored) {
       return { tasks: [], meta: { version: CURRENT_SCHEMA_VERSION } };
     }
@@ -69,9 +74,12 @@ export async function loadTasks() {
 /**
  * Saves tasks to localStorage
  * @param {Array} tasks - Array of task objects to save
+ * @param {{ storageKey?: string }} options - Optional storage key override
  * @returns {Promise<void>}
  */
-export async function saveTasks(tasks) {
+export async function saveTasks(tasks, options = {}) {
+  const storageKey = options.storageKey || DEFAULT_STORAGE_KEY;
+  
   try {
     if (!Array.isArray(tasks)) {
       console.error('saveTasks: tasks must be an array');
@@ -90,7 +98,7 @@ export async function saveTasks(tasks) {
     };
 
     const json = JSON.stringify(versioned);
-    localStorage.setItem(STORAGE_KEY, json);
+    localStorage.setItem(storageKey, json);
   } catch (error) {
     // Graceful failure - log but don't throw (don't crash app)
     console.error('Failed to save tasks to storage:', error);
@@ -99,11 +107,14 @@ export async function saveTasks(tasks) {
 
 /**
  * Clears all persisted tasks from localStorage
+ * @param {{ storageKey?: string }} options - Optional storage key override
  * @returns {Promise<void>}
  */
-export async function clearTasks() {
+export async function clearTasks(options = {}) {
+  const storageKey = options.storageKey || DEFAULT_STORAGE_KEY;
+  
   try {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(storageKey);
   } catch (error) {
     // Graceful failure - log but don't throw
     console.error('Failed to clear tasks from storage:', error);

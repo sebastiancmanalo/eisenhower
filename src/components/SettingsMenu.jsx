@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../auth/AuthProvider.jsx';
+import { getSession, signInStub, signOut } from '../data/session/SessionStore.js';
 import './SettingsMenu.css';
 
 function SettingsMenu({ onExport, onImport, onReset, notificationPreferences, onUpdateNotificationPreferences, onRequestBrowserPermission, onAuthStateChange }) {
-  const auth = useAuth();
+  const [session, setSession] = useState(() => getSession());
   const [isOpen, setIsOpen] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, flipped: false });
@@ -96,7 +96,7 @@ function SettingsMenu({ onExport, onImport, onReset, notificationPreferences, on
       clearTimeout(timeoutId);
       window.removeEventListener('resize', handleResize);
     };
-  }, [isOpen, showNotificationSettings, notificationPreferences, auth]);
+  }, [isOpen, showNotificationSettings, notificationPreferences, session]);
 
   // Prevent body scroll when menu is open
   useEffect(() => {
@@ -210,14 +210,16 @@ function SettingsMenu({ onExport, onImport, onReset, notificationPreferences, on
   };
 
   const handleSignIn = () => {
-    auth.signIn();
+    signInStub();
+    setSession(getSession());
     if (onAuthStateChange) {
       onAuthStateChange();
     }
   };
 
   const handleSignOut = () => {
-    auth.signOut();
+    signOut();
+    setSession(getSession());
     if (onAuthStateChange) {
       onAuthStateChange();
     }
@@ -305,28 +307,11 @@ function SettingsMenu({ onExport, onImport, onReset, notificationPreferences, on
         <div className="settings-menu__divider"></div>
         <div className="settings-menu__section">
           <div className="settings-menu__section-title">Account</div>
-          {auth.status === 'anonymous' ? (
-            <button
-              className="settings-menu__item"
-              onClick={handleSignIn}
-              type="button"
-            >
-              Sign in (stub)
-            </button>
-          ) : (
+          {session.isSignedIn ? (
             <>
               <div className="settings-menu__account-info">
-                <div className="settings-menu__account-label">User ID:</div>
-                <div className="settings-menu__account-value">{auth.user?.id || 'Unknown'}</div>
-              </div>
-              {auth.user?.email && (
-                <div className="settings-menu__account-info">
-                  <div className="settings-menu__account-label">Email:</div>
-                  <div className="settings-menu__account-value">{auth.user.email}</div>
-                </div>
-              )}
-              <div className="settings-menu__account-note">
-                Enables sync later (stub mode)
+                <div className="settings-menu__account-label">Signed in as:</div>
+                <div className="settings-menu__account-value">{session.userId ? session.userId.substring(0, 12) + '...' : 'Unknown'}</div>
               </div>
               <button
                 className="settings-menu__item"
@@ -336,6 +321,14 @@ function SettingsMenu({ onExport, onImport, onReset, notificationPreferences, on
                 Sign out
               </button>
             </>
+          ) : (
+            <button
+              className="settings-menu__item"
+              onClick={handleSignIn}
+              type="button"
+            >
+              Sign in (stub)
+            </button>
           )}
         </div>
         <div className="settings-menu__divider"></div>

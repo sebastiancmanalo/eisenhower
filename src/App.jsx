@@ -15,8 +15,8 @@ import ImportConfirmDialog from './components/ImportConfirmDialog.jsx';
 import { getQuadrant } from './utils/taskLogic.js';
 import { getDeadlineUrgency } from './utils/deadlineUrgency.js';
 import { normalizeTask } from './utils/normalizeTask.js';
-import { getStore } from './data/storage/storeConfig.js';
-import { useAuth } from './auth/AuthProvider.jsx';
+import * as TaskRepository from './data/repository/TaskRepository.js';
+import { getSession } from './data/session/SessionStore.js';
 import { updateTaskSyncFields } from './utils/updateTaskSyncFields.js';
 import { serializeTasksForExport, parseImportedTasks, mergeTasks } from './data/transfer/taskTransfer.js';
 import { loadPreferences, savePreferences } from './notifications/notificationPreferences.js';
@@ -29,14 +29,13 @@ import './styles/global.css';
 import './App.css';
 
 function App({ initialTasks, __test_onDragEnd }) {
-  const auth = useAuth();
   const defaultTasks = [
     { id: 1, title: "Finish design mockups", urgent: true, important: true, estimate: "~30m", createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' },
     { id: 2, title: "Email stakeholder", urgent: false, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'medium' }
   ];
   
-  // Get storage implementation (local or remote)
-  const taskStore = getStore();
+  // Track session state for reloading tasks on change
+  const [session, setSession] = useState(() => getSession());
   
   const [tasks, setTasks] = useState(() => {
     // If initialTasks provided (test mode), use them directly
@@ -53,7 +52,7 @@ function App({ initialTasks, __test_onDragEnd }) {
   // Helper to check if we should persist (not in test mode)
   const isTestOrInjected = initialTasks != null;
   
-  // Load tasks from storage on mount (unless in test mode)
+  // Load tasks from storage on mount or when session changes (unless in test mode)
   useEffect(() => {
     if (isTestOrInjected) {
       setHasLoadedTasks(true);
@@ -64,7 +63,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     
     const loadInitialTasks = async () => {
       try {
-        const { tasks: loadedTasks } = await taskStore.loadTasks();
+        const { tasks: loadedTasks } = await TaskRepository.loadTasks();
         if (cancelled) return;
         
         if (loadedTasks && loadedTasks.length > 0) {
@@ -87,7 +86,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     return () => {
       cancelled = true;
     };
-  }, [isTestOrInjected]);
+  }, [isTestOrInjected, session]);
   
   // Configure drag sensor with activation constraint (requires 8px movement before drag starts)
   const sensors = useSensors(
@@ -353,20 +352,34 @@ function App({ initialTasks, __test_onDragEnd }) {
     };
   }, []);
 
-  // Handle auth state changes - reload tasks when auth changes (if using remote store in future)
+  // Handle auth state changes - reload tasks when session changes
   const handleAuthStateChange = () => {
-    if (!isTestOrInjected) {
-      // Reload tasks from storage
-      taskStore.loadTasks().then(({ tasks: loadedTasks }) => {
-        if (loadedTasks && loadedTasks.length > 0) {
-          setTasks(loadedTasks);
-        } else {
-          setTasks(defaultTasks);
-        }
-      }).catch((error) => {
-        console.error('Failed to reload tasks:', error);
-      });
+    if (isTestOrInjected) {
+      return;
     }
+    
+    // Update session state (triggers reload via useEffect)
+    const newSession = getSession();
+    setSession(newSession);
+    
+    // Reload tasks from new scope
+    TaskRepository.loadTasks().then(({ tasks: loadedTasks }) => {
+      if (loadedTasks && loadedTasks.length > 0) {
+        setTasks(loadedTasks);
+      } else {
+        setTasks(defaultTasks);
+      }
+      
+      // Show toast based on session state
+      if (newSession.isSignedIn) {
+        const shortUserId = newSession.userId ? newSession.userId.substring(0, 12) + '...' : 'user';
+        pushToast({ message: `Signed in as ${shortUserId}`, tone: "success" });
+      } else {
+        pushToast({ message: "Signed out", tone: "neutral" });
+      }
+    }).catch((error) => {
+      console.error('Failed to reload tasks:', error);
+    });
   };
 
   // Debounced save to storage when tasks change (unless in test mode or not yet loaded)
@@ -387,7 +400,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     // Set new timeout for debounced save (250ms debounce, within 150-300ms range)
     saveDebounceRef.current = setTimeout(async () => {
       try {
-        await taskStore.saveTasks(tasks);
+        await TaskRepository.saveTasks(tasks);
       } catch (error) {
         console.error('Failed to save tasks:', error);
       }
@@ -399,7 +412,7 @@ function App({ initialTasks, __test_onDragEnd }) {
         clearTimeout(saveDebounceRef.current);
       }
     };
-  }, [tasks, isTestOrInjected, hasLoadedTasks, taskStore]);
+  }, [tasks, isTestOrInjected, hasLoadedTasks]);
 
   // Arrow key navigation for view switching
   useEffect(() => {
@@ -648,7 +661,7 @@ function App({ initialTasks, __test_onDragEnd }) {
       
       if (!isTestOrInjected) {
         try {
-          await taskStore.saveTasks(pendingImportedTasks);
+          await TaskRepository.saveTasks(pendingImportedTasks);
         } catch (error) {
           console.error('Failed to save imported tasks:', error);
           pushToast({ message: 'Imported but failed to save to storage', tone: "error" });
@@ -678,7 +691,7 @@ function App({ initialTasks, __test_onDragEnd }) {
       
       if (!isTestOrInjected) {
         try {
-          await taskStore.saveTasks(mergedTasks);
+          await TaskRepository.saveTasks(mergedTasks);
         } catch (error) {
           console.error('Failed to save merged tasks:', error);
           pushToast({ message: 'Merged but failed to save to storage', tone: "error" });
@@ -712,7 +725,7 @@ function App({ initialTasks, __test_onDragEnd }) {
     try {
       // Clear storage
       if (!isTestOrInjected) {
-        await taskStore.clearTasks();
+        await TaskRepository.clearTasks();
       }
       
       // Reset to default tasks

@@ -2,18 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App.jsx';
-import { STORAGE_KEY } from './utils/storage.js';
-import { saveTasks, clearTasks } from './data/storage/TaskStore.js';
+import * as TaskRepository from './data/repository/TaskRepository.js';
 
 describe('App Persistence', () => {
   beforeEach(() => {
     // Clear localStorage before each test
-    clearTasks();
+    localStorage.clear();
   });
 
   afterEach(() => {
     // Clean up localStorage after each test
-    clearTasks();
+    localStorage.clear();
   });
 
   it('should load tasks from localStorage when initialTasks is not provided', async () => {
@@ -22,7 +21,7 @@ describe('App Persistence', () => {
       { id: '1', title: 'Stored Task 1', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' },
       { id: '2', title: 'Stored Task 2', urgent: false, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'medium' }
     ];
-    await saveTasks(storedTasks);
+    await TaskRepository.saveTasks(storedTasks);
 
     // Act: render App without initialTasks
     render(<App />);
@@ -73,13 +72,9 @@ describe('App Persistence', () => {
       expect(screen.queryByTestId('assignment-overlay')).not.toBeInTheDocument();
     }, { timeout: 12000 });
 
-    // Wait for debounced save (200ms) plus a buffer
-    await waitFor(() => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      expect(stored).toBeTruthy();
-      const parsed = JSON.parse(stored);
-      // Handle versioned format
-      const tasks = parsed.version === 1 ? parsed.tasks : parsed;
+    // Wait for debounced save (250ms) plus a buffer
+    await waitFor(async () => {
+      const { tasks } = await TaskRepository.loadTasks();
       expect(Array.isArray(tasks)).toBe(true);
       const hasNewTask = tasks.some(task => task.title === 'New Persisted Task');
       expect(hasNewTask).toBe(true);
@@ -91,7 +86,7 @@ describe('App Persistence', () => {
     const storedTasks = [
       { id: 'stored-1', title: 'Stored Task', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' }
     ];
-    await saveTasks(storedTasks);
+    await TaskRepository.saveTasks(storedTasks);
 
     // Arrange: different tasks via initialTasks prop
     const injectedTasks = [
@@ -116,7 +111,7 @@ describe('App Persistence', () => {
     const user = userEvent.setup();
 
     // Arrange: clear localStorage and render with initialTasks
-    clearTasks();
+    localStorage.clear();
     const initialTasks = [
       { id: 'test-1', title: 'Test Task', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' }
     ];
@@ -138,21 +133,17 @@ describe('App Persistence', () => {
     }, { timeout: 12000 });
 
     // Wait for debounce period plus buffer, then check
-    await waitFor(() => {
+    await waitFor(async () => {
       // Assert: localStorage should not contain the new task (test mode, no persistence)
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const tasks = parsed.version === 1 ? parsed.tasks : parsed;
-        const hasNewTask = tasks.some(task => task.title === 'Should Not Persist');
-        expect(hasNewTask).toBe(false);
-      }
+      const { tasks } = await TaskRepository.loadTasks();
+      const hasNewTask = tasks.some(task => task.title === 'Should Not Persist');
+      expect(hasNewTask).toBe(false);
     }, { timeout: 10000 });
   });
 
   it('should handle corrupted localStorage and load demo tasks without crashing', async () => {
-    // Arrange: set localStorage to invalid JSON
-    localStorage.setItem(STORAGE_KEY, 'invalid json{broken');
+    // Arrange: set localStorage to invalid JSON (using anon scope key)
+    localStorage.setItem('tasks::anon', 'invalid json{broken');
 
     // Act: render App without initialTasks
     render(<App />);
@@ -175,7 +166,7 @@ describe('App Persistence', () => {
     const user = userEvent.setup();
 
     // Arrange: clear localStorage
-    clearTasks();
+    localStorage.clear();
 
     // Act 1: render App and create a task
     const { unmount } = render(<App />);
@@ -206,11 +197,8 @@ describe('App Persistence', () => {
     }, { timeout: 12000 });
 
     // Wait for debounced save (250ms) plus a buffer
-    await waitFor(() => {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      expect(stored).toBeTruthy();
-      const parsed = JSON.parse(stored);
-      const tasks = parsed.version === 1 ? parsed.tasks : parsed;
+    await waitFor(async () => {
+      const { tasks } = await TaskRepository.loadTasks();
       const hasNewTask = tasks.some(task => task.title === 'Persistent Task');
       expect(hasNewTask).toBe(true);
     }, { timeout: 10000 });

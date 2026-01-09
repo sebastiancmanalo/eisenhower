@@ -214,11 +214,11 @@ describe('Task Details Modal', () => {
     const user = userEvent.setup();
     
     // Set tasks in localStorage BEFORE rendering to simulate existing data
-    // Use versioned format
+    // Use user-scoped storage key (anon scope)
     const tasksWithStorage = [
-      { id: '1', title: 'Persistent Task', urgent: true, important: true }
+      { id: '1', title: 'Persistent Task', urgent: true, important: true, createdAt: Date.now(), dueDate: null, notificationFrequency: 'high' }
     ];
-    localStorage.setItem('eisenhower.tasks.v1', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
+    localStorage.setItem('tasks::anon', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
 
     // Render without initialTasks to test localStorage loading
     render(<App />);
@@ -255,7 +255,7 @@ describe('Task Details Modal', () => {
 
     // Verify localStorage was updated
     await waitFor(() => {
-      const stored = JSON.parse(localStorage.getItem('eisenhower.tasks.v1'));
+      const stored = JSON.parse(localStorage.getItem('tasks::anon'));
       expect(stored).toBeDefined();
       const tasks = stored.version === 1 ? stored.tasks : stored; // Handle both formats
       const task = tasks.find(t => String(t.id) === '1');
@@ -339,18 +339,19 @@ describe('Task Details Modal', () => {
     const user = userEvent.setup();
     
     // Set tasks in localStorage BEFORE rendering to simulate existing data
-    // Use versioned format
+    // Use user-scoped storage key (anon scope)
     const tasksWithStorage = [
       { 
         id: '1', 
         title: 'Persistent Task', 
         urgent: true, 
         important: true,
+        createdAt: Date.now(),
         dueDate: null,
         notificationFrequency: 'high'
       }
     ];
-    localStorage.setItem('eisenhower.tasks.v1', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
+    localStorage.setItem('tasks::anon', JSON.stringify({ version: 1, tasks: tasksWithStorage }));
 
     // Render without initialTasks to test localStorage loading
     render(<App />);
@@ -389,7 +390,7 @@ describe('Task Details Modal', () => {
 
     // Wait for debounced save
     await waitFor(() => {
-      const stored = JSON.parse(localStorage.getItem('eisenhower.tasks.v1'));
+      const stored = JSON.parse(localStorage.getItem('tasks::anon'));
       expect(stored).toBeDefined();
       const tasks = stored.version === 1 ? stored.tasks : stored; // Handle both formats
       const task = tasks.find(t => String(t.id) === '1');
